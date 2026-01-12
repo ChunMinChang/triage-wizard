@@ -48,6 +48,33 @@ Has STR suggestion rule:
 
 ---
 
+## Architecture: Pure Vanilla JS (No Build Step)
+
+The frontend is **100% pure HTML/CSS/JavaScript** with ES modules:
+
+- **No frameworks** (React, Vue, etc.)
+- **No bundlers** (Webpack, Vite build, etc.)
+- **No transpilation** (TypeScript, Babel, etc.)
+- **No npm required to run** - works directly in browser
+
+### For Users
+
+Just open `index.html` via any static server (GitHub Pages, Python http.server, etc.). The browser loads ES modules directly - no build step needed.
+
+### For Developers
+
+The `package.json` in `frontend/` contains **dev dependencies only** (Vitest for testing). These are optional and only needed if you want to run tests locally:
+
+```bash
+cd frontend
+npm install   # Only needed for testing
+npm test      # Run tests
+```
+
+The `node_modules/` folder is gitignored and not required for the app to function.
+
+---
+
 ## Quick start (frontend only)
 
 ### 1) Run a static server

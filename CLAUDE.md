@@ -14,6 +14,8 @@ A client-first web app to triage Mozilla Bugzilla bugs:
 ## Non-negotiables
 
 - Frontend must remain **pure HTML/CSS/JS** (no frameworks).
+- **No build step required** - browser loads ES modules directly.
+- **npm is for testing only** - `node_modules/` is not needed to run the app.
 - Keep module boundaries clean:
   - network in `bugzilla.js` / `ai.js`
   - pure logic in `tags.js` / `filters.js`
@@ -24,10 +26,17 @@ A client-first web app to triage Mozilla Bugzilla bugs:
 
 ## Dev commands
 
-Frontend:
+Frontend (run):
 ```bash
 cd frontend
 python -m http.server 8000
+```
+
+Frontend (test - optional):
+```bash
+cd frontend
+npm install   # First time only
+npm test      # Run Vitest tests
 ```
 
 Backend (optional):
