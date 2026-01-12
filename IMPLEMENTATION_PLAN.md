@@ -8,6 +8,25 @@
 
 **Testing Framework**: Vitest (primary) + Jest/jsdom (supplementary if needed)
 
+**Hosting**: GitHub Pages (auto-deploy via GitHub Actions)
+
+---
+
+## Deployment Requirements
+
+The frontend must be hostable on **GitHub Pages** so Mozilla developers can use it directly without local setup.
+
+**Key constraints:**
+- Pure vanilla JS (no build step, no bundlers)
+- Browser loads ES modules directly via `<script type="module">`
+- npm/node_modules are for testing only, not required to run the app
+- All functionality works client-side (backend is optional)
+
+**Deployment workflow:**
+- `.github/workflows/deploy-pages.yml` auto-deploys `frontend/` to GitHub Pages
+- Triggered on push to `main` branch (paths: `frontend/**`)
+- To enable: Repo Settings → Pages → Source: "GitHub Actions"
+
 ---
 
 ## Implementation Workflow (Reference for All Development Sessions)
