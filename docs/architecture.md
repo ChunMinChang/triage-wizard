@@ -99,7 +99,7 @@ User may:
   - `loadByIds()`
   - `loadByRestUrl()`
   - `loadByBuglistUrl()` (parsing + mapping)
-- Handles JSONP fallback for GETs when CORS blocks.
+- If CORS fails, shows error suggesting backend proxy mode.
 
 ### `ai.js`
 - AI provider abstraction:
@@ -181,7 +181,7 @@ Backend returns provider-agnostic JSON so frontend doesn’t care whether a requ
 ## 7. Known limitations
 
 - `buglist.cgi` mapping is best-effort for advanced queries; fallback is to prompt user to paste REST link.
-- JSONP fallback applies to GET endpoints only; writes still may require backend.
+- CORS failures prompt user to use backend proxy mode; writes may require backend.
 - Very large bug/comment payloads may hit provider context limits; POC prioritizes completeness.
 
 ---

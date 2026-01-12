@@ -6,6 +6,8 @@
 
 **Plan File Location**: This file (`IMPLEMENTATION_PLAN.md`) + Claude's plan file at `~/.claude/plans/ticklish-plotting-valiant.md`
 
+**Testing Framework**: Vitest (primary) + Jest/jsdom (supplementary if needed)
+
 ---
 
 ## Implementation Workflow (Reference for All Development Sessions)
@@ -125,9 +127,15 @@ L0-F3 ★ → L1-F1 ★ → L1-F2 ★ → L1-F4 ★ → L2-F1 ★ → L2-F3
 - `frontend/src/exports.js` - Export/import (L4-F8, L4-F9)
 - `frontend/canned-responses.md` - Sample responses (L4-F10)
 
+### Frontend Testing & Config
+- `frontend/package.json` - Node deps + test scripts (L0-F3)
+- `frontend/vitest.config.js` - Vitest configuration (L0-F3)
+- `frontend/src/__tests__/` - Test files directory (L0-F3)
+
 ### Backend (Optional)
 - `backend-rust/Cargo.toml` - Dependencies (L0-B1)
 - `backend-rust/src/main.rs` - Server setup (L0-B1)
+- `backend-rust/.env.example` - Environment template (L0-B1)
 - `backend-rust/src/ai_proxy.rs` - AI proxy (L3-B1)
 - `backend-rust/src/cli_claude.rs` - Claude CLI (L3-B2)
 - `backend-rust/src/bugzilla_proxy.rs` - Bugzilla proxy (L4-B1)
@@ -207,26 +215,39 @@ See below for the complete detailed task breakdown for all 70+ tasks across 5 la
 
 ---
 
-### L0-F3: Frontend Directory Structure ★
+### L0-F3: Frontend Directory Structure + Vitest Setup ★
 **Status**: [PENDING]
 **Priority**: Foundation (CRITICAL PATH)
-**Complexity**: Simple (30 min)
+**Complexity**: Simple (1 hour)
 **Dependencies**: None
 **Blocks**: All module implementation
 
-**Description**: Create empty module files in `frontend/src/` with JSDoc placeholders:
-- `app.js`, `bugzilla.js`, `ai.js`, `tags.js`, `filters.js`, `ui.js`, `cannedResponses.js`, `exports.js`, `storage.js`, `config.js`
-- Each file: JSDoc comment describing purpose, export placeholder functions
+**Description**: Create frontend module structure and testing setup:
+
+1. **Module files** in `frontend/src/` with JSDoc placeholders:
+   - `app.js`, `bugzilla.js`, `ai.js`, `tags.js`, `filters.js`, `ui.js`, `cannedResponses.js`, `exports.js`, `storage.js`, `config.js`
+   - Each file: JSDoc comment describing purpose, export placeholder functions
+
+2. **Testing setup**:
+   - Create `frontend/package.json` with Vitest as dev dependency
+   - Create `frontend/vitest.config.js` for ES module testing
+   - Configure test scripts: `npm test`, `npm run test:watch`
+   - Create `frontend/src/__tests__/` directory for test files
 
 **Verification**:
 - Import all modules from app.js succeeds
 - Console.log from each module shows execution
+- `npm test` runs successfully (even with no tests yet)
 
 **Tests**:
 - Add test imports in app.js: `console.log('Module loaded')`
 - Verify console output in browser
+- Run `npm test` to verify Vitest setup
 
-**Files**: All `frontend/src/*.js`
+**Files**:
+- All `frontend/src/*.js`
+- `frontend/package.json`
+- `frontend/vitest.config.js`
 
 ---
 
@@ -266,22 +287,39 @@ See below for the complete detailed task breakdown for all 70+ tasks across 5 la
 **Blocks**: All backend features (L3-B1, L4-B1)
 
 **Description**: Create `backend-rust/Cargo.toml` and `src/main.rs`:
-- Dependencies: `tokio`, `axum`, `serde`, `serde_json`, `reqwest`, `tower-http`
+- Dependencies: `tokio`, `axum`, `serde`, `serde_json`, `reqwest`, `tower-http`, `dotenvy`
 - Basic Axum server on port 3000
 - CORS middleware for `localhost:8000`
 - Health check endpoint: `GET /health` returns 200 OK
+- Environment variable loading via dotenvy
+
+**Environment setup** - Create `.env.example`:
+```
+# AI Provider API Keys
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+GROK_API_KEY=
+
+# Claude Backend Mode: api (HTTP API) or cli (Claude Code CLI)
+CLAUDE_BACKEND_MODE=api
+
+# Bugzilla API Key (optional, for server-side key usage)
+BUGZILLA_API_KEY=
+```
 
 **Verification**:
 - `cargo run` compiles and starts server
 - `curl http://localhost:3000/health` returns 200
 - Fetch from browser console succeeds (CORS)
+- Environment variables load correctly
 
 **Tests**:
 - Manual: Run `cd backend-rust && cargo run`
 - Test: `curl http://localhost:3000/health`
 - Browser DevTools: `fetch('http://localhost:3000/health').then(r => r.text())`
 
-**Files**: `backend-rust/Cargo.toml`, `backend-rust/src/main.rs`
+**Files**: `backend-rust/Cargo.toml`, `backend-rust/src/main.rs`, `backend-rust/.env.example`
 
 ---
 
