@@ -45,7 +45,7 @@ When working on any task in this plan, follow this TDD workflow:
 
 ### Layer 0: Foundation (5 tasks)
 - [ ] L0-F1: Frontend HTML Skeleton ★ (CRITICAL PATH)
-- [ ] L0-F3: Frontend Directory Structure ★ (CRITICAL PATH)
+- [x] L0-F3: Frontend Directory Structure + Vitest Setup ★ (CRITICAL PATH) ✓
 - [ ] L0-B1: Rust Backend Scaffold
 - [ ] L0-F2: Basic CSS Foundation (depends on L0-F1)
 - [ ] L0-F4: Storage Module (depends on L0-F3)
@@ -216,7 +216,7 @@ See below for the complete detailed task breakdown for all 70+ tasks across 5 la
 ---
 
 ### L0-F3: Frontend Directory Structure + Vitest Setup ★
-**Status**: [PENDING]
+**Status**: [COMPLETE]
 **Priority**: Foundation (CRITICAL PATH)
 **Complexity**: Simple (1 hour)
 **Dependencies**: None
