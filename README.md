@@ -73,6 +73,17 @@ npm test      # Run tests
 
 The `node_modules/` folder is gitignored and not required for the app to function.
 
+### GitHub Pages Deployment
+
+This repo includes a GitHub Actions workflow that automatically deploys the frontend to GitHub Pages when changes are pushed to `main`.
+
+**To enable:**
+1. Go to your repo's **Settings** → **Pages**
+2. Under "Build and deployment", select **GitHub Actions** as the source
+3. Push to `main` branch - the workflow will deploy automatically
+
+The app will be available at: `https://<username>.github.io/<repo-name>/`
+
 ---
 
 ## Quick start (frontend only)

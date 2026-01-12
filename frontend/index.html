@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bugzilla Bug Triage Helper</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Bugzilla Bug Triage Helper</h1>
+    <p>A tool to help Mozilla developers triage Bugzilla bugs efficiently.</p>
+  </header>
+
+  <main>
+    <!-- Settings Section -->
+    <section id="settings" class="collapsible">
+      <h2>Settings</h2>
+      <div class="settings-content">
+        <!-- Bugzilla settings -->
+        <fieldset>
+          <legend>Bugzilla</legend>
+          <label>
+            Host URL:
+            <input type="url" id="bugzilla-host" value="https://bugzilla.mozilla.org" />
+          </label>
+          <label>
+            API Key (optional):
+            <input type="password" id="bugzilla-api-key" />
+          </label>
+        </fieldset>
+
+        <!-- AI settings -->
+        <fieldset>
+          <legend>AI Provider</legend>
+          <label>
+            Provider:
+            <select id="ai-provider">
+              <option value="none">None (heuristics only)</option>
+              <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
+            </select>
+          </label>
+          <label>
+            API Key:
+            <input type="password" id="ai-api-key" />
+          </label>
+        </fieldset>
+      </div>
+    </section>
+
+    <!-- Bug Input Section -->
+    <section id="bug-input">
+      <h2>Load Bugs</h2>
+      <div class="input-group">
+        <label for="bug-input-field">
+          Enter bug IDs, REST URL, or buglist.cgi URL:
+        </label>
+        <textarea id="bug-input-field" rows="3" placeholder="123456 234567 or https://bugzilla.mozilla.org/rest/bug?..."></textarea>
+        <button id="load-bugs-btn" type="button">Load Bugs</button>
+      </div>
+    </section>
+
+    <!-- Filter Controls -->
+    <section id="filters">
+      <h2>Filters</h2>
+      <div class="filter-controls">
+        <div class="filter-group">
+          <label>Include tags:</label>
+          <div id="include-tags" class="tag-checkboxes">
+            <!-- Tag checkboxes will be populated by JS -->
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Exclude tags:</label>
+          <div id="exclude-tags" class="tag-checkboxes">
+            <!-- Tag checkboxes will be populated by JS -->
+          </div>
+        </div>
+        <div class="filter-actions">
+          <select id="filter-preset">
+            <option value="">-- Preset filters --</option>
+            <option value="fuzzing-testcase">Fuzzing testcase</option>
+          </select>
+          <button id="apply-filter-btn" type="button">Apply Filter</button>
+          <button id="clear-filter-btn" type="button">Clear</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bug Table -->
+    <section id="bug-list">
+      <h2>Bugs <span id="bug-count"></span></h2>
+      <div class="table-actions">
+        <button id="process-all-btn" type="button">Process All</button>
+      </div>
+      <div id="bug-table-container">
+        <table id="bug-table">
+          <thead>
+            <tr>
+              <th scope="col">ID</th>
+              <th scope="col">Status</th>
+              <th scope="col">Product</th>
+              <th scope="col">Component</th>
+              <th scope="col">Summary</th>
+              <th scope="col">Tags</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bug-table-body">
+            <!-- Bug rows will be populated by JS -->
+          </tbody>
+        </table>
+        <p id="empty-state" class="empty-state">
+          No bugs loaded. Enter bug IDs or a Bugzilla URL above and click "Load Bugs".
+        </p>
+      </div>
+    </section>
+
+    <!-- Export Section -->
+    <section id="exports">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button id="export-json-btn" type="button">Export JSON</button>
+        <button id="export-csv-btn" type="button">Export CSV</button>
+        <button id="export-md-btn" type="button">Export Markdown</button>
+        <label class="import-label">
+          Import JSON:
+          <input type="file" id="import-json" accept=".json" />
+        </label>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/anthropics/triage-wizard" target="_blank">GitHub</a> |
+      Built for Mozilla bug triage
+    </p>
+  </footer>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="loading-overlay" hidden>
+    <div class="spinner"></div>
+    <p id="loading-message">Loading...</p>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Load app as ES module -->
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
