@@ -47,6 +47,7 @@ const DOM_IDS = {
   RESPONSE_BODY: 'response-body',
   COPY_RESPONSE_BTN: 'copy-response-btn',
   POST_RESPONSE_BTN: 'post-response-btn',
+  AI_CUSTOMIZE_BTN: 'ai-customize-btn',
 };
 
 /**
@@ -174,6 +175,11 @@ export function setupEventListeners() {
   const postResponseBtn = getElement(DOM_IDS.POST_RESPONSE_BTN);
   if (postResponseBtn) {
     postResponseBtn.addEventListener('click', handlePostResponse);
+  }
+
+  const aiCustomizeBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
+  if (aiCustomizeBtn) {
+    aiCustomizeBtn.addEventListener('click', handleAiCustomize);
   }
 
   // Close modal on backdrop click
@@ -743,6 +749,79 @@ export async function handlePostResponse() {
   // TODO: Post to Bugzilla API (L4-F7)
   ui.showInfo('Posting to Bugzilla is not yet implemented');
   console.log('[app] Would post to bug', bugId, ':', body);
+}
+
+/**
+ * Handle AI customize button click.
+ */
+export async function handleAiCustomize() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  // Get current selected response
+  const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+  const responseId = select?.value;
+
+  if (!responseId) {
+    ui.showInfo('Please select a canned response first');
+    return;
+  }
+
+  const cannedResponse = cannedResponses.getById(responseId);
+  if (!cannedResponse) {
+    ui.showError('Selected response not found');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const aiBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
+  if (aiBtn) {
+    aiBtn.disabled = true;
+    aiBtn.textContent = 'Customizing...';
+  }
+
+  try {
+    const result = await ai.customizeCannedResponse(bug, cannedResponse, aiConfig);
+
+    if (result.final_response) {
+      ui.setComposerResponseBody(result.final_response);
+      ui.showSuccess('Response customized with AI');
+    } else {
+      ui.showInfo('No customized response returned');
+    }
+  } catch (err) {
+    ui.showError(`AI customization failed: ${err.message}`);
+    console.error('[app] AI customize error:', err);
+  } finally {
+    if (aiBtn) {
+      aiBtn.disabled = false;
+      aiBtn.textContent = 'AI Customize';
+    }
+  }
 }
 
 /**

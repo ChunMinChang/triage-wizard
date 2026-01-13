@@ -186,9 +186,12 @@
       <div class="modal-body">
         <div class="composer-controls">
           <label for="canned-response-select">Select a canned response:</label>
-          <select id="canned-response-select">
-            <option value="">-- Choose a response --</option>
-          </select>
+          <div class="composer-select-row">
+            <select id="canned-response-select">
+              <option value="">-- Choose a response --</option>
+            </select>
+            <button id="ai-customize-btn" type="button" class="btn-ai">AI Customize</button>
+          </div>
         </div>
         <div class="composer-editor">
           <label for="response-body">Response body:</label>

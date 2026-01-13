@@ -650,6 +650,31 @@ button:disabled {
   margin-bottom: 0.5rem;
 }
 
+.composer-select-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.composer-select-row select {
+  flex: 1;
+  max-width: none;
+}
+
+.btn-ai {
+  background: #6f42c1;
+  color: white;
+  white-space: nowrap;
+}
+
+.btn-ai:hover {
+  background: #5a32a3;
+}
+
+.btn-ai:disabled {
+  background: #ccc;
+}
+
 .composer-controls select {
   max-width: 100%;
 }
