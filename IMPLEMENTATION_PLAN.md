@@ -72,7 +72,7 @@ When working on any task in this plan, follow this TDD workflow:
 ### Layer 1 (in progress)
 - [x] L1-F1: Config Module ★ ✓
 - [x] L1-F2: Bugzilla REST Integration ★ (HIGHEST IMPACT) ✓
-- L1-F3: Basic UI Rendering
+- [x] L1-F3: Basic UI Rendering ✓
 - L1-F4: App Orchestration ★
 
 ---
