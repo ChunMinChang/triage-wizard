@@ -180,6 +180,49 @@ export function renderTags(tags) {
 }
 
 /**
+ * Render tags with optional "Set Has STR" suggestion button.
+ * @param {Object[]} tags - Array of tag objects
+ * @param {boolean} hasStrSuggested - Whether to show the "Set Has STR" button
+ * @param {string|number} [bugId] - Bug ID for the button data attribute
+ * @returns {HTMLElement} Container with badge elements and optional button
+ */
+export function renderTagsWithSuggestion(tags, hasStrSuggested, bugId) {
+  const container = document.createElement('div');
+  container.className = 'tags-container';
+
+  // Render tags
+  if (tags && Array.isArray(tags)) {
+    tags.forEach((tag) => {
+      const badge = document.createElement('span');
+      badge.className = `tag-badge tag-${tag.id}`;
+      badge.textContent = tag.label || tag.id;
+
+      if (tag.evidence) {
+        badge.title = tag.evidence;
+      }
+
+      container.appendChild(badge);
+    });
+  }
+
+  // Add "Set Has STR" button if suggested
+  if (hasStrSuggested) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-small btn-set-has-str';
+    btn.textContent = 'Set Has STR';
+    btn.dataset.action = 'set-has-str';
+    if (bugId !== undefined) {
+      btn.dataset.bugId = String(bugId);
+    }
+    btn.title = 'Mark this bug as having Steps To Reproduce';
+    container.appendChild(btn);
+  }
+
+  return container;
+}
+
+/**
  * Show/hide loading spinner.
  * @param {boolean} show - Whether to show the spinner
  * @param {string} [message='Loading...'] - Loading message

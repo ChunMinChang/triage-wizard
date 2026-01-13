@@ -314,6 +314,20 @@ button:disabled {
   box-shadow: 0 0 0 2px rgba(108,117,125,0.4);
 }
 
+/* Set Has STR suggestion button */
+.btn-set-has-str {
+  background: #28a745;
+  margin-left: 0.5rem;
+}
+
+.btn-set-has-str:hover {
+  background: #218838;
+}
+
+.btn-set-has-str:focus {
+  box-shadow: 0 0 0 2px rgba(40,167,69,0.4);
+}
+
 /* === Summary Row === */
 .summary-row {
   background: #f8f9fa;

@@ -7,6 +7,7 @@ import {
   renderBugTable,
   renderBugRow,
   renderTags,
+  renderTagsWithSuggestion,
   setLoading,
   showToast,
   showError,
@@ -562,6 +563,70 @@ describe('ui module', () => {
     it('should have aria-live on toast container', () => {
       const container = document.getElementById('toast-container');
       expect(container.getAttribute('aria-live')).toBe('polite');
+    });
+  });
+
+  describe('renderTagsWithSuggestion', () => {
+    it('should render tags without suggestion button when hasStrSuggested is false', () => {
+      const tags = [{ id: 'test-attached', label: 'test-attached' }];
+      const container = renderTagsWithSuggestion(tags, false);
+
+      expect(container.querySelector('.tag-badge')).not.toBeNull();
+      expect(container.querySelector('.btn-set-has-str')).toBeNull();
+    });
+
+    it('should render "Set Has STR" button when hasStrSuggested is true', () => {
+      const tags = [{ id: 'test-attached', label: 'test-attached' }];
+      const container = renderTagsWithSuggestion(tags, true);
+
+      const btn = container.querySelector('.btn-set-has-str');
+      expect(btn).not.toBeNull();
+      expect(btn.textContent).toContain('Set Has STR');
+    });
+
+    it('should not show button if Has STR tag is already present', () => {
+      const tags = [
+        { id: 'has-str', label: 'Has STR' },
+        { id: 'test-attached', label: 'test-attached' },
+      ];
+      const container = renderTagsWithSuggestion(tags, false);
+
+      expect(container.querySelector('.btn-set-has-str')).toBeNull();
+    });
+
+    it('should set correct data attributes on button', () => {
+      const tags = [{ id: 'test-attached', label: 'test-attached' }];
+      const bugId = 123456;
+      const container = renderTagsWithSuggestion(tags, true, bugId);
+
+      const btn = container.querySelector('.btn-set-has-str');
+      expect(btn.dataset.action).toBe('set-has-str');
+      expect(btn.dataset.bugId).toBe(String(bugId));
+    });
+
+    it('should handle empty tags with suggestion', () => {
+      const container = renderTagsWithSuggestion([], true, 123);
+
+      const btn = container.querySelector('.btn-set-has-str');
+      expect(btn).not.toBeNull();
+    });
+  });
+
+  describe('AI tag styling', () => {
+    it('should apply AI tag class for AI-detected STR', () => {
+      const tags = [{ id: 'ai-detected-str', label: 'AI-detected STR' }];
+      const container = renderTags(tags);
+
+      const badge = container.querySelector('.tag-badge');
+      expect(badge.classList.contains('tag-ai-detected-str')).toBe(true);
+    });
+
+    it('should apply AI tag class for AI-detected test-attached', () => {
+      const tags = [{ id: 'ai-detected-test-attached', label: 'AI-detected test-attached' }];
+      const container = renderTags(tags);
+
+      const badge = container.querySelector('.tag-badge');
+      expect(badge.classList.contains('tag-ai-detected-test-attached')).toBe(true);
     });
   });
 });

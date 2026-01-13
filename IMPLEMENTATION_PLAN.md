@@ -77,7 +77,7 @@ When working on any task in this plan, follow this TDD workflow:
 
 ### Layer 2: Tagging & Filtering (in progress)
 - [x] L2-F1: Heuristic Tagging ★ (CORE LOGIC) ✓
-- [ ] L2-F2: Tag Display
+- [x] L2-F2: Tag Display ✓
 - [x] L2-F3: Filter Engine ✓
 - [ ] L2-F4: Filter UI
 
