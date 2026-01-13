@@ -448,4 +448,375 @@ describe('ai module', () => {
       expect(result.selected_responses).toEqual([]);
     });
   });
+
+  describe('Gemini integration', () => {
+    const mockGeminiResponse = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                text: JSON.stringify({
+                  ai_detected_str: true,
+                  ai_detected_test_attached: false,
+                  crashstack_present: true,
+                  fuzzing_testcase: false,
+                  summary: 'Crash when clicking button. Has clear STR.',
+                  notes: {},
+                }),
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    it('should parse Gemini response correctly', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockGeminiResponse,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test bug' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      expect(result.ai_detected_str).toBe(true);
+      expect(result.crashstack_present).toBe(true);
+      expect(result.summary).toContain('Crash when clicking');
+    });
+
+    it('should call correct Gemini endpoint', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockGeminiResponse,
+      });
+
+      await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'my-api-key', model: 'gemini-2.0-flash' }
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('generativelanguage.googleapis.com'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.0-flash');
+      expect(global.fetch.mock.calls[0][0]).toContain('key=my-api-key');
+    });
+
+    it('should use default model when not specified', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockGeminiResponse,
+      });
+
+      await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.0-flash');
+    });
+
+    it('should request JSON mime type from Gemini', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockGeminiResponse,
+      });
+
+      await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      const callBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(callBody.generationConfig.responseMimeType).toBe('application/json');
+    });
+
+    it('should handle Gemini API error', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => 'Invalid API key',
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'gemini', transport: 'browser', apiKey: 'bad-key' }
+        )
+      ).rejects.toThrow(/Gemini API error.*400/);
+    });
+
+    it('should handle empty Gemini response', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ candidates: [] }),
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+        )
+      ).rejects.toThrow(/No content/);
+    });
+
+    it('should handle Gemini response with markdown code block', async () => {
+      const responseWithCodeBlock = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: '```json\n{"ai_detected_str": false, "ai_detected_test_attached": true, "crashstack_present": false, "fuzzing_testcase": false, "summary": "Test"}\n```',
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithCodeBlock,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      expect(result.ai_detected_test_attached).toBe(true);
+    });
+  });
+
+  describe('Claude integration', () => {
+    const mockClaudeResponse = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ai_detected_str: false,
+            ai_detected_test_attached: true,
+            crashstack_present: false,
+            fuzzing_testcase: true,
+            summary: 'Fuzzing testcase found.',
+            notes: { source: 'fuzzer' },
+          }),
+        },
+      ],
+    };
+
+    it('should parse Claude response correctly', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockClaudeResponse,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test bug' },
+        { provider: 'claude', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      expect(result.ai_detected_test_attached).toBe(true);
+      expect(result.fuzzing_testcase).toBe(true);
+      expect(result.summary).toContain('Fuzzing testcase');
+    });
+
+    it('should call correct Claude endpoint with headers', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockClaudeResponse,
+      });
+
+      await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'claude', transport: 'browser', apiKey: 'sk-ant-test' }
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://api.anthropic.com/v1/messages',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'x-api-key': 'sk-ant-test',
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          }),
+        })
+      );
+    });
+
+    it('should use correct model in Claude request', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockClaudeResponse,
+      });
+
+      await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'claude', transport: 'browser', apiKey: 'test-key', model: 'claude-sonnet-4-5' }
+      );
+
+      const callBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(callBody.model).toBe('claude-sonnet-4-5');
+    });
+
+    it('should handle Claude API error', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized',
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'claude', transport: 'browser', apiKey: 'bad-key' }
+        )
+      ).rejects.toThrow(/Claude API error.*401/);
+    });
+
+    it('should handle empty Claude response', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ content: [] }),
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'claude', transport: 'browser', apiKey: 'test-key' }
+        )
+      ).rejects.toThrow(/No content/);
+    });
+  });
+
+  describe('backend proxy mode', () => {
+    it('should call backend proxy for backend transport', async () => {
+      const mockBackendResponse = {
+        ai_detected_str: true,
+        ai_detected_test_attached: false,
+        crashstack_present: false,
+        fuzzing_testcase: false,
+        summary: 'Backend processed',
+      };
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockBackendResponse,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'claude', transport: 'backend' }
+      );
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:3000/api/ai/classify',
+        expect.objectContaining({
+          method: 'POST',
+        })
+      );
+      expect(result.ai_detected_str).toBe(true);
+    });
+
+    it('should work for openai via backend proxy', async () => {
+      const mockResponse = {
+        ai_detected_str: false,
+        ai_detected_test_attached: false,
+        crashstack_present: false,
+        fuzzing_testcase: false,
+        summary: 'Processed via backend',
+      };
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'openai', transport: 'backend' }
+      );
+
+      expect(result.summary).toBe('Processed via backend');
+    });
+
+    it('should handle backend proxy error', async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal server error',
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'claude', transport: 'backend' }
+        )
+      ).rejects.toThrow(/Backend proxy error.*500/);
+    });
+  });
+
+  describe('JSON parsing edge cases', () => {
+    it('should handle response with extra text around JSON', async () => {
+      const responseWithExtraText = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: 'Here is the analysis:\n{"ai_detected_str": true, "ai_detected_test_attached": false, "crashstack_present": false, "fuzzing_testcase": false, "summary": "Test"}\n\nLet me know if you need more.',
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => responseWithExtraText,
+      });
+
+      const result = await classifyBug(
+        { id: 123, summary: 'Test' },
+        { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+      );
+
+      expect(result.ai_detected_str).toBe(true);
+    });
+
+    it('should handle malformed JSON gracefully', async () => {
+      const malformedResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'This is not valid JSON at all!' }],
+            },
+          },
+        ],
+      };
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => malformedResponse,
+      });
+
+      await expect(
+        classifyBug(
+          { id: 123, summary: 'Test' },
+          { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
+        )
+      ).rejects.toThrow(/Failed to parse/);
+    });
+  });
 });

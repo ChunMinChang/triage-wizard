@@ -83,8 +83,8 @@ When working on any task in this plan, follow this TDD workflow:
 
 ### Layer 3: AI Integration (in progress)
 - [x] L3-F1: AI Provider Abstraction ★ ✓
-- [ ] L3-F2: Gemini Browser Integration
-- [ ] L3-F3: Claude Browser Integration
+- [x] L3-F2: Gemini Browser Integration ✓
+- [x] L3-F3: Claude Browser Integration ✓
 - [ ] L3-F4: AI UI Integration
 
 ---
