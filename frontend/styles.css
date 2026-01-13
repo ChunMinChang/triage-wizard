@@ -948,6 +948,36 @@ button:disabled {
   background: #218838;
 }
 
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.btn-secondary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* History indicator in modal footer */
+.history-indicator {
+  margin-right: auto;
+  font-size: 0.8rem;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.history-indicator::before {
+  content: '↩';
+  font-size: 1rem;
+}
+
 /* === Responsive === */
 @media (max-width: 768px) {
   main {

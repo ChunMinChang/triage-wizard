@@ -24,6 +24,12 @@ let loadedBugs = [];
 /** @type {Object} Current filter state */
 let currentFilter = { include: [], exclude: [] };
 
+/** @type {string[]} Response history for undo functionality */
+let responseHistory = [];
+
+/** Maximum number of history entries to keep */
+const MAX_HISTORY_SIZE = 20;
+
 /** DOM element IDs used by this module */
 const DOM_IDS = {
   BUG_INPUT: 'bug-input-field',
@@ -57,6 +63,8 @@ const DOM_IDS = {
   REFINE_INSTRUCTION: 'refine-instruction',
   REFINE_BTN: 'refine-btn',
   REFINE_CHIPS: 'refine-chips',
+  UNDO_RESPONSE_BTN: 'undo-response-btn',
+  HISTORY_INDICATOR: 'history-indicator',
 };
 
 /**
@@ -235,6 +243,12 @@ export function setupEventListeners() {
   const refineChips = document.querySelector('.refine-chips');
   if (refineChips) {
     refineChips.addEventListener('click', handleRefineChipClick);
+  }
+
+  // Undo response button
+  const undoBtn = getElement(DOM_IDS.UNDO_RESPONSE_BTN);
+  if (undoBtn) {
+    undoBtn.addEventListener('click', handleUndo);
   }
 
   // Close modal on backdrop click
@@ -952,6 +966,9 @@ function handleComposeBug(bugId) {
     return;
   }
 
+  // Clear history from any previous session
+  clearResponseHistory();
+
   const responses = cannedResponses.getAll();
   ui.openResponseComposer(bug, responses);
 }
@@ -960,7 +977,80 @@ function handleComposeBug(bugId) {
  * Handle close composer button click.
  */
 export function handleCloseComposer() {
+  clearResponseHistory();
   ui.closeResponseComposer();
+}
+
+/**
+ * Clear response history and update UI.
+ */
+function clearResponseHistory() {
+  responseHistory = [];
+  updateHistoryUI();
+}
+
+/**
+ * Push current response to history before modification.
+ * @param {string} response - Current response text
+ */
+function pushToHistory(response) {
+  if (!response || !response.trim()) return;
+  responseHistory.push(response);
+  // Limit history size
+  if (responseHistory.length > MAX_HISTORY_SIZE) {
+    responseHistory.shift();
+  }
+  updateHistoryUI();
+}
+
+/**
+ * Pop and return the last response from history.
+ * @returns {string|null}
+ */
+function popFromHistory() {
+  if (responseHistory.length === 0) return null;
+  const response = responseHistory.pop();
+  updateHistoryUI();
+  return response;
+}
+
+/**
+ * Update the history UI (undo button state and indicator).
+ */
+function updateHistoryUI() {
+  const undoBtn = getElement(DOM_IDS.UNDO_RESPONSE_BTN);
+  const indicator = getElement(DOM_IDS.HISTORY_INDICATOR);
+  const hasHistory = responseHistory.length > 0;
+
+  if (undoBtn) {
+    undoBtn.disabled = !hasHistory;
+    undoBtn.title = hasHistory
+      ? `Undo to previous version (${responseHistory.length} in history)`
+      : 'No history available';
+  }
+
+  if (indicator) {
+    if (hasHistory) {
+      indicator.textContent = `${responseHistory.length} version${responseHistory.length > 1 ? 's' : ''} in history`;
+      indicator.hidden = false;
+    } else {
+      indicator.hidden = true;
+    }
+  }
+}
+
+/**
+ * Handle undo button click.
+ * Restores the previous response from history.
+ */
+export function handleUndo() {
+  const previousResponse = popFromHistory();
+  if (previousResponse) {
+    ui.setComposerResponseBody(previousResponse);
+    ui.showInfo('Restored previous version');
+  } else {
+    ui.showInfo('No more history to undo');
+  }
 }
 
 /**
@@ -969,6 +1059,8 @@ export function handleCloseComposer() {
  */
 export function handleCannedResponseSelect(event) {
   const responseId = event.target.value;
+  // Clear history when selecting a new canned response
+  clearResponseHistory();
   if (!responseId) {
     ui.setComposerResponseBody('');
     return;
@@ -1199,6 +1291,12 @@ export async function handleAiCustomize() {
     aiBtn.textContent = 'Customizing...';
   }
 
+  // Save current response to history before customizing
+  const currentResponse = ui.getComposerResponseBody();
+  if (currentResponse && currentResponse.trim()) {
+    pushToHistory(currentResponse);
+  }
+
   try {
     const result = await ai.customizeCannedResponse(bug, cannedResponse, aiConfig);
 
@@ -1256,6 +1354,12 @@ export async function handleAiGenerate() {
   if (generateBtn) {
     generateBtn.disabled = true;
     generateBtn.textContent = 'Generating...';
+  }
+
+  // Save current response to history before generating new one
+  const currentResponse = ui.getComposerResponseBody();
+  if (currentResponse && currentResponse.trim()) {
+    pushToHistory(currentResponse);
   }
 
   try {
@@ -1490,6 +1594,9 @@ export async function handleRefine() {
     refineBtn.disabled = true;
     refineBtn.textContent = 'Refining...';
   }
+
+  // Save current response to history before refining
+  pushToHistory(currentResponse);
 
   try {
     // Check if a canned response is selected for context
