@@ -192,12 +192,32 @@
             </select>
             <button id="ai-suggest-btn" type="button" class="btn-ai-secondary">AI Suggest</button>
             <button id="ai-customize-btn" type="button" class="btn-ai">AI Customize</button>
+            <button id="ai-generate-btn" type="button" class="btn-ai-primary">AI Generate</button>
           </div>
         </div>
         <div class="composer-editor">
           <label for="response-body">Response body:</label>
           <textarea id="response-body" rows="12" placeholder="Select a canned response above or write your own..."></textarea>
         </div>
+        <div class="composer-refine">
+          <label for="refine-instruction">Refine with AI:</label>
+          <div class="refine-input-row">
+            <input type="text" id="refine-instruction" placeholder="e.g., 'make it shorter', 'ask for profile'" />
+            <button id="refine-btn" type="button" class="btn-ai-secondary">Refine</button>
+          </div>
+          <div class="refine-chips">
+            <button type="button" class="chip" data-instruction="Make it shorter">Shorter</button>
+            <button type="button" class="chip" data-instruction="Use a friendlier tone">Friendlier</button>
+            <button type="button" class="chip" data-instruction="Add request for STR">+STR request</button>
+            <button type="button" class="chip" data-instruction="Add request for crash profile">+Profile</button>
+          </div>
+        </div>
+        <details class="ai-reasoning-panel" id="ai-reasoning-panel">
+          <summary>AI Reasoning</summary>
+          <div id="ai-reasoning-content" class="ai-reasoning-content">
+            <p class="empty-state">No AI reasoning available yet. Click "AI Generate" to get started.</p>
+          </div>
+        </details>
       </div>
       <footer class="modal-footer">
         <button id="copy-response-btn" type="button">Copy to Clipboard</button>

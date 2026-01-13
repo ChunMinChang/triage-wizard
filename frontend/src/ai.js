@@ -173,6 +173,67 @@ export function validateSuggestResult(result) {
 }
 
 /**
+ * Validate a generate response result against the schema.
+ * @param {Object} result - Result to validate
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validateGenerateResult(result) {
+  const errors = [];
+
+  if (!result || typeof result !== 'object') {
+    return { valid: false, errors: ['Result must be an object'] };
+  }
+
+  if (typeof result.response_text !== 'string') {
+    errors.push('response_text must be a string');
+  }
+
+  if (!Array.isArray(result.suggested_actions)) {
+    errors.push('suggested_actions must be an array');
+  } else {
+    for (let i = 0; i < result.suggested_actions.length; i++) {
+      const item = result.suggested_actions[i];
+      if (!item || typeof item.action !== 'string') {
+        errors.push(`suggested_actions[${i}] must have an action string`);
+      }
+    }
+  }
+
+  if (result.used_canned_ids !== undefined && !Array.isArray(result.used_canned_ids)) {
+    errors.push('used_canned_ids must be an array');
+  }
+
+  if (typeof result.reasoning !== 'string') {
+    errors.push('reasoning must be a string');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a refine response result against the schema.
+ * @param {Object} result - Result to validate
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+export function validateRefineResult(result) {
+  const errors = [];
+
+  if (!result || typeof result !== 'object') {
+    return { valid: false, errors: ['Result must be an object'] };
+  }
+
+  if (typeof result.refined_response !== 'string') {
+    errors.push('refined_response must be a string');
+  }
+
+  if (!Array.isArray(result.changes_made)) {
+    errors.push('changes_made must be an array');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
  * Build the classification prompt for a bug.
  * @param {Object} bug - Bug object
  * @returns {string} Prompt string
@@ -323,6 +384,166 @@ export function buildSuggestPrompt(bug, cannedResponses) {
   parts.push('    { "id": "string", "reason": "string (optional)", "customized_text": "string (optional)" }');
   parts.push('  ],');
   parts.push('  "fallback_custom_text": "string (optional, if no canned response fits)"');
+  parts.push('}');
+  parts.push('```');
+
+  return parts.join('\n');
+}
+
+/**
+ * Build the generate response prompt for a bug.
+ * @param {Object} bug - Bug object
+ * @param {Object} options - Generation options
+ * @param {string} [options.mode] - 'response' or 'next-steps'
+ * @param {Object[]} [options.cannedResponses] - Optional canned responses for reference
+ * @returns {string} Prompt string
+ */
+export function buildGeneratePrompt(bug, options = {}) {
+  const mode = options.mode || 'response';
+  const parts = [];
+
+  parts.push(`You are a Mozilla bug triage expert analyzing bug #${bug.id || 'unknown'}.`);
+  parts.push('');
+  parts.push('## Bug Information');
+  parts.push(`**Summary:** ${bug.summary || 'No summary'}`);
+  parts.push(`**Status:** ${bug.status || 'Unknown'}`);
+  parts.push(`**Product:** ${bug.product || 'Unknown'}`);
+  parts.push(`**Component:** ${bug.component || 'Unknown'}`);
+  parts.push('');
+
+  if (bug.description) {
+    parts.push('## Description');
+    parts.push(bug.description.substring(0, 2000));
+    parts.push('');
+  }
+
+  if (bug.aiSummary) {
+    parts.push('## AI Summary (from prior analysis)');
+    parts.push(bug.aiSummary);
+    parts.push('');
+  }
+
+  if (bug.comments && bug.comments.length > 0) {
+    parts.push('## Recent Comments');
+    const recentComments = bug.comments.slice(-5); // Last 5 comments
+    recentComments.forEach((comment, i) => {
+      const text = comment.text || comment.raw_text || '';
+      parts.push(`### Comment ${bug.comments.length - recentComments.length + i + 1}`);
+      parts.push(text.substring(0, 1000));
+      parts.push('');
+    });
+  }
+
+  if (bug.attachments && bug.attachments.length > 0) {
+    parts.push('## Attachments');
+    bug.attachments.forEach((att) => {
+      parts.push(`- **${att.filename || 'unnamed'}**: ${att.description || 'No description'}`);
+    });
+    parts.push('');
+  }
+
+  // Include canned responses as reference if provided
+  if (options.cannedResponses && options.cannedResponses.length > 0) {
+    parts.push('## Available Canned Responses (for reference)');
+    options.cannedResponses.forEach((resp) => {
+      parts.push(`- **${resp.id}**: ${resp.title || resp.id}`);
+      if (resp.bodyTemplate) {
+        parts.push(`  Template: ${resp.bodyTemplate.substring(0, 150)}...`);
+      }
+    });
+    parts.push('');
+  }
+
+  parts.push('## Task');
+
+  if (mode === 'next-steps') {
+    parts.push('Analyze this bug and recommend the next triage actions.');
+    parts.push('Consider:');
+    parts.push('- Does the bug need more information? (STR, profile, testcase)');
+    parts.push('- Should any flags be set? (Has STR, Need Info)');
+    parts.push('- Is this a duplicate or known issue?');
+    parts.push('- What priority/severity seems appropriate?');
+  } else {
+    parts.push('Draft a polite, professional triage comment for this bug.');
+    parts.push('The response should:');
+    parts.push('- Thank the reporter if appropriate');
+    parts.push('- Be concise and actionable');
+    parts.push('- Request specific missing information if needed');
+    parts.push('- Use a helpful, welcoming tone');
+  }
+  parts.push('');
+
+  if (options.cannedResponses && options.cannedResponses.length > 0) {
+    parts.push('If any of the canned responses above are applicable, you may incorporate their structure.');
+    parts.push('');
+  }
+
+  parts.push('Return ONLY a JSON object with this exact structure:');
+  parts.push('```json');
+  parts.push('{');
+  parts.push('  "response_text": "string (the triage comment to post)",');
+  parts.push('  "suggested_actions": [');
+  parts.push('    { "action": "string (e.g., set-has-str, need-info, close-duplicate)", "reason": "string" }');
+  parts.push('  ],');
+  parts.push('  "used_canned_ids": ["string (IDs of canned responses referenced, if any)"],');
+  parts.push('  "reasoning": "string (brief explanation of your triage approach)"');
+  parts.push('}');
+  parts.push('```');
+
+  return parts.join('\n');
+}
+
+/**
+ * Build the refine response prompt.
+ * @param {Object} bug - Bug object
+ * @param {string} currentResponse - Current response text
+ * @param {string} userInstruction - User's refinement instruction
+ * @param {Object} context - Optional context
+ * @param {Object} [context.selectedCannedResponse] - A canned response to incorporate
+ * @returns {string} Prompt string
+ */
+export function buildRefinePrompt(bug, currentResponse, userInstruction, context = {}) {
+  const parts = [];
+
+  parts.push(`You are refining a triage response for Mozilla bug #${bug.id || 'unknown'}.`);
+  parts.push('');
+  parts.push('## Bug Context');
+  parts.push(`**Summary:** ${bug.summary || 'No summary'}`);
+  if (bug.description) {
+    parts.push(`**Description:** ${bug.description.substring(0, 500)}`);
+  }
+  parts.push('');
+
+  parts.push('## Current Response');
+  parts.push('```');
+  parts.push(currentResponse);
+  parts.push('```');
+  parts.push('');
+
+  parts.push('## User Instruction');
+  parts.push(userInstruction);
+  parts.push('');
+
+  if (context.selectedCannedResponse) {
+    parts.push('## Reference Canned Response');
+    parts.push(`**ID:** ${context.selectedCannedResponse.id}`);
+    parts.push(`**Title:** ${context.selectedCannedResponse.title || 'Untitled'}`);
+    if (context.selectedCannedResponse.bodyTemplate) {
+      parts.push('**Template:**');
+      parts.push(context.selectedCannedResponse.bodyTemplate);
+    }
+    parts.push('');
+  }
+
+  parts.push('## Task');
+  parts.push('Apply the user instruction to refine the current response.');
+  parts.push('Keep the response professional and appropriate for a Mozilla bug comment.');
+  parts.push('');
+  parts.push('Return ONLY a JSON object with this exact structure:');
+  parts.push('```json');
+  parts.push('{');
+  parts.push('  "refined_response": "string (the updated response text)",');
+  parts.push('  "changes_made": ["string (brief description of each change made)"]');
   parts.push('}');
   parts.push('```');
 
@@ -679,6 +900,156 @@ export async function suggestCannedResponse(bug, cannedResponses, providerConfig
   return {
     selected_responses: Array.isArray(parsed.selected_responses) ? parsed.selected_responses : [],
     fallback_custom_text: String(parsed.fallback_custom_text || ''),
+  };
+}
+
+/**
+ * Create an empty/default generate response result.
+ * @returns {Object}
+ */
+function emptyGenerateResult() {
+  return {
+    response_text: '',
+    suggested_actions: [],
+    used_canned_ids: [],
+    reasoning: '',
+  };
+}
+
+/**
+ * Create an empty/default refine response result.
+ * @param {string} currentResponse - The original response
+ * @returns {Object}
+ */
+function emptyRefineResult(currentResponse = '') {
+  return {
+    refined_response: currentResponse,
+    changes_made: [],
+  };
+}
+
+/**
+ * Generate a response or next-step suggestion for a bug from scratch.
+ * @param {Object} bug - Bug object with description, comments, attachments
+ * @param {Object} options - Generation options
+ * @param {string} [options.mode] - 'response' (comment draft) or 'next-steps' (triage actions)
+ * @param {Object[]} [options.cannedResponses] - Optional canned responses for reference
+ * @param {Object} providerConfig - AI provider configuration
+ * @returns {Promise<Object>} { response_text, suggested_actions[], used_canned_ids[], reasoning }
+ */
+export async function generateResponse(bug, options, providerConfig) {
+  // Return empty result if not configured
+  if (!isProviderConfigured(providerConfig)) {
+    console.log('[ai] Provider not configured, returning empty result');
+    return emptyGenerateResult();
+  }
+
+  const provider = providerConfig.provider;
+  const transport = providerConfig.transport || 'browser';
+
+  // Check browser mode support
+  if (transport === 'browser' && !supportsBrowserMode(provider)) {
+    throw new Error(`Provider "${provider}" does not support browser mode. Use backend mode instead.`);
+  }
+
+  const prompt = buildGeneratePrompt(bug, options);
+
+  let responseText;
+
+  if (transport === 'backend') {
+    // Use backend proxy
+    const result = await callBackendProxy('generate', { bug, options }, providerConfig);
+    return result;
+  } else {
+    // Browser mode
+    if (provider === 'gemini') {
+      responseText = await callGeminiBrowser(prompt, providerConfig);
+    } else if (provider === 'claude') {
+      responseText = await callClaudeBrowser(prompt, providerConfig);
+    } else {
+      throw new Error(`Unknown provider: ${provider}`);
+    }
+  }
+
+  // Parse response
+  const parsed = parseJsonFromResponse(responseText);
+  if (!parsed) {
+    throw new Error('Failed to parse AI response as JSON');
+  }
+
+  // Validate
+  const validation = validateGenerateResult(parsed);
+  if (!validation.valid) {
+    console.warn('[ai] Generate result validation errors:', validation.errors);
+  }
+
+  return {
+    response_text: String(parsed.response_text || ''),
+    suggested_actions: Array.isArray(parsed.suggested_actions) ? parsed.suggested_actions : [],
+    used_canned_ids: Array.isArray(parsed.used_canned_ids) ? parsed.used_canned_ids : [],
+    reasoning: String(parsed.reasoning || ''),
+  };
+}
+
+/**
+ * Refine a response based on user instructions.
+ * @param {Object} bug - Bug object
+ * @param {string} currentResponse - Current response text
+ * @param {string} userInstruction - User's refinement instruction
+ * @param {Object} [context] - Optional context
+ * @param {Object} [context.selectedCannedResponse] - A canned response to incorporate
+ * @param {Object} providerConfig - AI provider configuration
+ * @returns {Promise<Object>} { refined_response, changes_made[] }
+ */
+export async function refineResponse(bug, currentResponse, userInstruction, context, providerConfig) {
+  // Return unchanged if not configured
+  if (!isProviderConfigured(providerConfig)) {
+    console.log('[ai] Provider not configured, returning unchanged response');
+    return emptyRefineResult(currentResponse);
+  }
+
+  const provider = providerConfig.provider;
+  const transport = providerConfig.transport || 'browser';
+
+  // Check browser mode support
+  if (transport === 'browser' && !supportsBrowserMode(provider)) {
+    throw new Error(`Provider "${provider}" does not support browser mode. Use backend mode instead.`);
+  }
+
+  const prompt = buildRefinePrompt(bug, currentResponse, userInstruction, context || {});
+
+  let responseText;
+
+  if (transport === 'backend') {
+    // Use backend proxy
+    const result = await callBackendProxy('refine', { bug, currentResponse, userInstruction, context }, providerConfig);
+    return result;
+  } else {
+    // Browser mode
+    if (provider === 'gemini') {
+      responseText = await callGeminiBrowser(prompt, providerConfig);
+    } else if (provider === 'claude') {
+      responseText = await callClaudeBrowser(prompt, providerConfig);
+    } else {
+      throw new Error(`Unknown provider: ${provider}`);
+    }
+  }
+
+  // Parse response
+  const parsed = parseJsonFromResponse(responseText);
+  if (!parsed) {
+    throw new Error('Failed to parse AI response as JSON');
+  }
+
+  // Validate
+  const validation = validateRefineResult(parsed);
+  if (!validation.valid) {
+    console.warn('[ai] Refine result validation errors:', validation.errors);
+  }
+
+  return {
+    refined_response: String(parsed.refined_response || currentResponse),
+    changes_made: Array.isArray(parsed.changes_made) ? parsed.changes_made : [],
   };
 }
 

@@ -49,6 +49,10 @@ const DOM_IDS = {
   POST_RESPONSE_BTN: 'post-response-btn',
   AI_CUSTOMIZE_BTN: 'ai-customize-btn',
   AI_SUGGEST_BTN: 'ai-suggest-btn',
+  AI_GENERATE_BTN: 'ai-generate-btn',
+  REFINE_INSTRUCTION: 'refine-instruction',
+  REFINE_BTN: 'refine-btn',
+  REFINE_CHIPS: 'refine-chips',
 };
 
 /**
@@ -186,6 +190,35 @@ export function setupEventListeners() {
   const aiSuggestBtn = getElement(DOM_IDS.AI_SUGGEST_BTN);
   if (aiSuggestBtn) {
     aiSuggestBtn.addEventListener('click', handleAiSuggest);
+  }
+
+  // AI Generate button
+  const aiGenerateBtn = getElement(DOM_IDS.AI_GENERATE_BTN);
+  if (aiGenerateBtn) {
+    aiGenerateBtn.addEventListener('click', handleAiGenerate);
+  }
+
+  // Refine button
+  const refineBtn = getElement(DOM_IDS.REFINE_BTN);
+  if (refineBtn) {
+    refineBtn.addEventListener('click', handleRefine);
+  }
+
+  // Refine instruction - handle Enter key
+  const refineInstruction = getElement(DOM_IDS.REFINE_INSTRUCTION);
+  if (refineInstruction) {
+    refineInstruction.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleRefine();
+      }
+    });
+  }
+
+  // Refine chips (delegation)
+  const refineChips = document.querySelector('.refine-chips');
+  if (refineChips) {
+    refineChips.addEventListener('click', handleRefineChipClick);
   }
 
   // Close modal on backdrop click
@@ -910,6 +943,183 @@ export async function handleAiCustomize() {
       aiBtn.textContent = 'AI Customize';
     }
   }
+}
+
+/**
+ * Handle AI generate button click.
+ * Generates a response from scratch using AI.
+ */
+export async function handleAiGenerate() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const generateBtn = getElement(DOM_IDS.AI_GENERATE_BTN);
+  if (generateBtn) {
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating...';
+  }
+
+  try {
+    // Get available canned responses for reference
+    const responses = cannedResponses.getAll();
+
+    const result = await ai.generateResponse(
+      bug,
+      { mode: 'response', cannedResponses: responses },
+      aiConfig
+    );
+
+    if (result.response_text) {
+      ui.setComposerResponseBody(result.response_text);
+      ui.updateReasoningPanel(result);
+      ui.showSuccess('Response generated');
+    } else {
+      ui.showInfo('No response generated');
+    }
+  } catch (err) {
+    ui.showError(`AI generation failed: ${err.message}`);
+    console.error('[app] AI generate error:', err);
+  } finally {
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'AI Generate';
+    }
+  }
+}
+
+/**
+ * Handle refine button click.
+ * Refines the current response based on user instruction.
+ */
+export async function handleRefine() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  const currentResponse = ui.getComposerResponseBody();
+  if (!currentResponse.trim()) {
+    ui.showInfo('No response to refine. Generate or enter a response first.');
+    return;
+  }
+
+  const instruction = ui.getRefineInstruction();
+  if (!instruction.trim()) {
+    ui.showInfo('Please enter a refinement instruction');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const refineBtn = getElement(DOM_IDS.REFINE_BTN);
+  if (refineBtn) {
+    refineBtn.disabled = true;
+    refineBtn.textContent = 'Refining...';
+  }
+
+  try {
+    // Check if a canned response is selected for context
+    const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+    const responseId = select?.value;
+    const context = {};
+    if (responseId) {
+      context.selectedCannedResponse = cannedResponses.getById(responseId);
+    }
+
+    const result = await ai.refineResponse(
+      bug,
+      currentResponse,
+      instruction,
+      context,
+      aiConfig
+    );
+
+    if (result.refined_response) {
+      ui.setComposerResponseBody(result.refined_response);
+      ui.clearRefineInstruction();
+
+      if (result.changes_made && result.changes_made.length > 0) {
+        ui.showSuccess(`Refined: ${result.changes_made.join(', ')}`);
+      } else {
+        ui.showSuccess('Response refined');
+      }
+    }
+  } catch (err) {
+    ui.showError(`AI refinement failed: ${err.message}`);
+    console.error('[app] AI refine error:', err);
+  } finally {
+    if (refineBtn) {
+      refineBtn.disabled = false;
+      refineBtn.textContent = 'Refine';
+    }
+  }
+}
+
+/**
+ * Handle click on a refine chip.
+ * @param {Event} event - Click event
+ */
+export async function handleRefineChipClick(event) {
+  const chip = event.target.closest('.chip');
+  if (!chip) return;
+
+  const instruction = chip.dataset.instruction;
+  if (!instruction) return;
+
+  // Set the instruction in the input field
+  const input = getElement(DOM_IDS.REFINE_INSTRUCTION);
+  if (input) {
+    input.value = instruction;
+  }
+
+  // Trigger the refine action
+  await handleRefine();
 }
 
 /**

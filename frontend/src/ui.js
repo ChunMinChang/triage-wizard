@@ -589,6 +589,90 @@ export function setComposerResponseBody(text) {
 }
 
 /**
+ * Get the refine instruction input value.
+ * @returns {string} Instruction text
+ */
+export function getRefineInstruction() {
+  const input = document.getElementById('refine-instruction');
+  return input ? input.value.trim() : '';
+}
+
+/**
+ * Clear the refine instruction input.
+ */
+export function clearRefineInstruction() {
+  const input = document.getElementById('refine-instruction');
+  if (input) {
+    input.value = '';
+  }
+}
+
+/**
+ * Update the AI reasoning panel with generate response results.
+ * @param {Object} result - Result from generateResponse
+ * @param {string} result.reasoning - AI's reasoning text
+ * @param {Array} result.suggested_actions - Suggested actions
+ * @param {Array} result.used_canned_ids - IDs of canned responses used
+ */
+export function updateReasoningPanel(result) {
+  const content = document.getElementById('ai-reasoning-content');
+  if (!content) return;
+
+  const parts = [];
+
+  if (result.reasoning) {
+    parts.push(`<div class="reasoning-text">${escapeHtml(result.reasoning)}</div>`);
+  }
+
+  if (result.suggested_actions && result.suggested_actions.length > 0) {
+    parts.push('<div class="suggested-actions">');
+    parts.push('<h4>Suggested Actions:</h4>');
+    result.suggested_actions.forEach((action) => {
+      parts.push(`<div class="action-item" data-action="${escapeHtml(action.action)}">`);
+      parts.push(`<span class="action-badge">${escapeHtml(action.action)}</span>`);
+      if (action.reason) {
+        parts.push(`<span class="action-reason">${escapeHtml(action.reason)}</span>`);
+      }
+      parts.push('</div>');
+    });
+    parts.push('</div>');
+  }
+
+  if (result.used_canned_ids && result.used_canned_ids.length > 0) {
+    parts.push('<div class="used-canned">');
+    parts.push('<strong>Referenced:</strong> ' + result.used_canned_ids.map(escapeHtml).join(', '));
+    parts.push('</div>');
+  }
+
+  if (parts.length === 0) {
+    parts.push('<p class="empty-state">No reasoning available.</p>');
+  }
+
+  content.innerHTML = parts.join('');
+
+  // Open the panel to show the results
+  const panel = document.getElementById('ai-reasoning-panel');
+  if (panel) {
+    panel.open = true;
+  }
+}
+
+/**
+ * Clear the AI reasoning panel.
+ */
+export function clearReasoningPanel() {
+  const content = document.getElementById('ai-reasoning-content');
+  if (content) {
+    content.innerHTML = '<p class="empty-state">No AI reasoning available yet. Click "AI Generate" to get started.</p>';
+  }
+
+  const panel = document.getElementById('ai-reasoning-panel');
+  if (panel) {
+    panel.open = false;
+  }
+}
+
+/**
  * Render a single canned response card.
  * @param {Object} response - Canned response object
  * @returns {HTMLElement} Card element
