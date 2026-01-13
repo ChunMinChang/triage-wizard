@@ -69,11 +69,17 @@ When working on any task in this plan, follow this TDD workflow:
 - [x] L0-F2: Basic CSS Foundation ✓
 - [x] L0-F4: Storage Module (depends on L0-F3) ✓
 
-### Layer 1 (in progress)
+### Layer 1 (complete)
 - [x] L1-F1: Config Module ★ ✓
 - [x] L1-F2: Bugzilla REST Integration ★ (HIGHEST IMPACT) ✓
 - [x] L1-F3: Basic UI Rendering ✓
 - [x] L1-F4: App Orchestration ★ ✓
+
+### Layer 2: Tagging & Filtering (in progress)
+- [x] L2-F1: Heuristic Tagging ★ (CORE LOGIC) ✓
+- [ ] L2-F2: Tag Display
+- [ ] L2-F3: Filter Engine
+- [ ] L2-F4: Filter UI
 
 ---
 
