@@ -675,6 +675,20 @@ button:disabled {
   background: #ccc;
 }
 
+.btn-ai-secondary {
+  background: #9b72cf;
+  color: white;
+  white-space: nowrap;
+}
+
+.btn-ai-secondary:hover {
+  background: #7d5aab;
+}
+
+.btn-ai-secondary:disabled {
+  background: #ccc;
+}
+
 .composer-controls select {
   max-width: 100%;
 }

@@ -48,6 +48,7 @@ const DOM_IDS = {
   COPY_RESPONSE_BTN: 'copy-response-btn',
   POST_RESPONSE_BTN: 'post-response-btn',
   AI_CUSTOMIZE_BTN: 'ai-customize-btn',
+  AI_SUGGEST_BTN: 'ai-suggest-btn',
 };
 
 /**
@@ -180,6 +181,11 @@ export function setupEventListeners() {
   const aiCustomizeBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
   if (aiCustomizeBtn) {
     aiCustomizeBtn.addEventListener('click', handleAiCustomize);
+  }
+
+  const aiSuggestBtn = getElement(DOM_IDS.AI_SUGGEST_BTN);
+  if (aiSuggestBtn) {
+    aiSuggestBtn.addEventListener('click', handleAiSuggest);
   }
 
   // Close modal on backdrop click
@@ -749,6 +755,88 @@ export async function handlePostResponse() {
   // TODO: Post to Bugzilla API (L4-F7)
   ui.showInfo('Posting to Bugzilla is not yet implemented');
   console.log('[app] Would post to bug', bugId, ':', body);
+}
+
+/**
+ * Handle AI suggest button click.
+ */
+export async function handleAiSuggest() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get available responses
+  const responses = cannedResponses.getAll();
+  if (!responses || responses.length === 0) {
+    ui.showInfo('No canned responses available');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const suggestBtn = getElement(DOM_IDS.AI_SUGGEST_BTN);
+  if (suggestBtn) {
+    suggestBtn.disabled = true;
+    suggestBtn.textContent = 'Suggesting...';
+  }
+
+  try {
+    const result = await ai.suggestCannedResponse(bug, responses, aiConfig);
+
+    if (result.selected_responses && result.selected_responses.length > 0) {
+      // Auto-select the first suggested response
+      const firstSuggestion = result.selected_responses[0];
+      const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+
+      if (select) {
+        select.value = firstSuggestion.id;
+        // Trigger change event to load the template
+        select.dispatchEvent(new Event('change'));
+      }
+
+      if (result.selected_responses.length > 1) {
+        ui.showSuccess(`Suggested: ${firstSuggestion.id} (${result.selected_responses.length} options)`);
+      } else {
+        ui.showSuccess(`Suggested: ${firstSuggestion.id}`);
+      }
+    } else if (result.fallback_custom_text) {
+      // Use fallback custom text
+      ui.setComposerResponseBody(result.fallback_custom_text);
+      ui.showInfo('No matching response found. AI provided a custom suggestion.');
+    } else {
+      ui.showInfo('AI could not suggest a response for this bug');
+    }
+  } catch (err) {
+    ui.showError(`AI suggestion failed: ${err.message}`);
+    console.error('[app] AI suggest error:', err);
+  } finally {
+    if (suggestBtn) {
+      suggestBtn.disabled = false;
+      suggestBtn.textContent = 'AI Suggest';
+    }
+  }
 }
 
 /**
