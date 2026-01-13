@@ -81,11 +81,11 @@ When working on any task in this plan, follow this TDD workflow:
 - [x] L2-F3: Filter Engine ✓
 - [x] L2-F4: Filter UI ✓
 
-### Layer 3: AI Integration (in progress)
+### Layer 3: AI Integration (complete)
 - [x] L3-F1: AI Provider Abstraction ★ ✓
 - [x] L3-F2: Gemini Browser Integration ✓
 - [x] L3-F3: Claude Browser Integration ✓
-- [ ] L3-F4: AI UI Integration
+- [x] L3-F4: AI UI Integration ✓
 
 ---
 

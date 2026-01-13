@@ -21,9 +21,21 @@ export const PRESETS = {
     include: [TAG_IDS.FUZZY_TEST_ATTACHED],
     exclude: [],
   },
-  // AI presets will be added in L3-F4:
-  // 'ai-str-no-has-str': { include: [AI_DETECTED_STR], exclude: [HAS_STR] }
-  // 'ai-str-test-no-formal': { include: [AI_DETECTED_STR, AI_DETECTED_TEST_ATTACHED], exclude: [HAS_STR, TEST_ATTACHED] }
+  'ai-str-no-has-str': {
+    label: 'AI STR but no Has STR',
+    include: [TAG_IDS.AI_DETECTED_STR],
+    exclude: [TAG_IDS.HAS_STR],
+  },
+  'ai-str-test-no-formal': {
+    label: 'AI STR + test, no formal tags',
+    include: [TAG_IDS.AI_DETECTED_STR, TAG_IDS.AI_DETECTED_TEST_ATTACHED],
+    exclude: [TAG_IDS.HAS_STR, TAG_IDS.TEST_ATTACHED],
+  },
+  'needs-review': {
+    label: 'Needs review (AI found STR)',
+    include: [TAG_IDS.AI_DETECTED_STR],
+    exclude: [],
+  },
 };
 
 /**

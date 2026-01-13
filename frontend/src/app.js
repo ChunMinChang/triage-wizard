@@ -13,6 +13,8 @@ import * as bugzilla from './bugzilla.js';
 import * as ui from './ui.js';
 import * as config from './config.js';
 import * as filters from './filters.js';
+import * as tags from './tags.js';
+import * as ai from './ai.js';
 
 /** @type {Object[]} Currently loaded bugs */
 let loadedBugs = [];
@@ -192,6 +194,7 @@ export async function loadBugs(input) {
  * @param {Object} bug - Bug object to process
  * @param {Object} [options] - Processing options
  * @param {boolean} [options.fetchDetails] - Whether to fetch attachments and comments
+ * @param {boolean} [options.runAi] - Whether to run AI classification
  * @returns {Promise<Object>} Processed bug with tags
  */
 export async function processBug(bug, options = {}) {
@@ -219,8 +222,38 @@ export async function processBug(bug, options = {}) {
     }
   }
 
-  // TODO: Compute heuristic tags (L2-F1)
-  // TODO: Run AI classification if configured (L3)
+  // Compute heuristic tags
+  processed.tags = tags.computeHeuristicTags(processed);
+
+  // Run AI classification if configured and requested
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (options.runAi && ai.isProviderConfigured(aiConfig)) {
+    try {
+      const aiResult = await ai.classifyBug(processed, aiConfig);
+
+      // Merge AI tags with heuristic tags (enforces semantic rules)
+      processed.tags = tags.mergeAiTags(processed.tags, aiResult);
+
+      // Store AI summary
+      processed.aiSummary = aiResult.summary;
+
+      // Calculate hasStrSuggested
+      processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
+    } catch (error) {
+      console.warn('[app] AI classification failed:', error);
+      // Continue without AI tags - heuristics still available
+    }
+  } else {
+    // Calculate hasStrSuggested with heuristic tags only
+    processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
+  }
 
   return processed;
 }
@@ -307,7 +340,8 @@ async function handleProcessAllClick() {
   }
 
   try {
-    await processAllBugs(loadedBugs);
+    // Process all bugs with AI classification if configured
+    await processAllBugs(loadedBugs, { runAi: true });
   } catch (error) {
     ui.showError('Failed to process bugs: ' + error.message);
   }
@@ -528,7 +562,7 @@ async function handleProcessSingleBug(bugId) {
   ui.setLoading(true, `Processing bug ${bugId}...`);
 
   try {
-    const processed = await processBug(bug, { fetchDetails: true });
+    const processed = await processBug(bug, { fetchDetails: true, runAi: true });
 
     // Update in loaded bugs array
     const index = loadedBugs.findIndex((b) => String(b.id) === String(bugId));

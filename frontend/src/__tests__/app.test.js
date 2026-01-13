@@ -6,6 +6,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as bugzilla from '../bugzilla.js';
 import * as ui from '../ui.js';
 import * as config from '../config.js';
+import * as tags from '../tags.js';
+import * as ai from '../ai.js';
 
 // Mock modules
 vi.mock('../bugzilla.js', () => ({
@@ -48,6 +50,21 @@ vi.mock('../filters.js', async () => {
     applyPreset: vi.fn((bugs, presetId) => actual.applyPreset(bugs, presetId)),
   };
 });
+
+vi.mock('../tags.js', async () => {
+  const actual = await vi.importActual('../tags.js');
+  return {
+    ...actual,
+    computeHeuristicTags: vi.fn((bug) => actual.computeHeuristicTags(bug)),
+    mergeAiTags: vi.fn((tags, aiResult) => actual.mergeAiTags(tags, aiResult)),
+    calculateHasStrSuggested: vi.fn((tags) => actual.calculateHasStrSuggested(tags)),
+  };
+});
+
+vi.mock('../ai.js', () => ({
+  isProviderConfigured: vi.fn(() => false),
+  classifyBug: vi.fn(),
+}));
 
 // Import app after mocking dependencies
 import {
@@ -604,6 +621,90 @@ describe('app module', () => {
       const calls = ui.updateBugCount.mock.calls;
       const lastCall = calls[calls.length - 1];
       expect(lastCall[0]).toBe(1); // Only bug 2 has test-attached
+    });
+  });
+
+  describe('AI integration (L3-F4)', () => {
+    const mockBugWithStr = {
+      id: 1001,
+      summary: 'Test bug',
+      description: 'Steps to reproduce: 1. Open browser 2. Click button 3. See crash',
+      cf_has_str: 'no',
+    };
+
+    beforeEach(() => {
+      bugzilla.parseInputString.mockReturnValue({ type: 'ids', ids: ['1001'] });
+      bugzilla.loadBugsByIds.mockResolvedValue([mockBugWithStr]);
+      bugzilla.fetchAttachments.mockResolvedValue([]);
+      bugzilla.fetchComments.mockResolvedValue([]);
+    });
+
+    it('should compute heuristic tags when processing bug', async () => {
+      await loadBugs('1001');
+
+      const result = await processBug(mockBugWithStr, {});
+
+      // Should have called computeHeuristicTags
+      expect(tags.computeHeuristicTags).toHaveBeenCalledWith(expect.objectContaining({ id: 1001 }));
+      expect(tags.calculateHasStrSuggested).toHaveBeenCalled();
+    });
+
+    it('should not run AI classification when provider is not configured', async () => {
+      ai.isProviderConfigured.mockReturnValue(false);
+
+      await loadBugs('1001');
+      await processBug(mockBugWithStr, { runAi: true });
+
+      // AI should not be called
+      expect(ai.classifyBug).not.toHaveBeenCalled();
+    });
+
+    it('should run AI classification when provider is configured', async () => {
+      // Configure AI provider
+      config.getConfig.mockReturnValue({
+        bugzillaHost: 'https://bugzilla.mozilla.org',
+        aiProvider: 'gemini',
+        aiTransport: 'browser',
+        aiApiKey: 'test-key',
+      });
+      ai.isProviderConfigured.mockReturnValue(true);
+      ai.classifyBug.mockResolvedValue({
+        ai_detected_str: true,
+        ai_detected_test_attached: false,
+        crashstack_present: false,
+        fuzzing_testcase: false,
+        summary: 'Bug has clear STR',
+      });
+
+      const result = await processBug(mockBugWithStr, { runAi: true });
+
+      // AI should have been called
+      expect(ai.classifyBug).toHaveBeenCalled();
+      expect(tags.mergeAiTags).toHaveBeenCalled();
+      expect(result.aiSummary).toBe('Bug has clear STR');
+    });
+
+    it('should calculate hasStrSuggested after processing', async () => {
+      const result = await processBug(mockBugWithStr, {});
+
+      expect(tags.calculateHasStrSuggested).toHaveBeenCalled();
+      expect(result.hasStrSuggested).toBeDefined();
+    });
+
+    it('should handle AI classification failure gracefully', async () => {
+      config.getConfig.mockReturnValue({
+        bugzillaHost: 'https://bugzilla.mozilla.org',
+        aiProvider: 'gemini',
+        aiApiKey: 'test-key',
+      });
+      ai.isProviderConfigured.mockReturnValue(true);
+      ai.classifyBug.mockRejectedValue(new Error('API error'));
+
+      // Should not throw, should continue with heuristic tags
+      const result = await processBug(mockBugWithStr, { runAi: true });
+
+      expect(result).toBeDefined();
+      expect(tags.computeHeuristicTags).toHaveBeenCalled();
     });
   });
 });

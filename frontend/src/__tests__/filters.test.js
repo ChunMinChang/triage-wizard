@@ -410,4 +410,80 @@ describe('filters module', () => {
       expect(result[0].id).toBe(6);
     });
   });
+
+  describe('AI filter presets (L3-F4)', () => {
+    const bugsForAiPresets = [
+      {
+        id: 1,
+        summary: 'Bug with Has STR (formal)',
+        tags: [{ id: TAG_IDS.HAS_STR, label: 'Has STR' }],
+      },
+      {
+        id: 2,
+        summary: 'Bug with AI-detected STR but no formal Has STR',
+        tags: [{ id: TAG_IDS.AI_DETECTED_STR, label: 'AI-detected STR' }],
+      },
+      {
+        id: 3,
+        summary: 'Bug with AI STR and AI test-attached',
+        tags: [
+          { id: TAG_IDS.AI_DETECTED_STR, label: 'AI-detected STR' },
+          { id: TAG_IDS.AI_DETECTED_TEST_ATTACHED, label: 'AI-detected test-attached' },
+        ],
+      },
+      {
+        id: 4,
+        summary: 'Bug with AI STR and formal test-attached',
+        tags: [
+          { id: TAG_IDS.AI_DETECTED_STR, label: 'AI-detected STR' },
+          { id: TAG_IDS.TEST_ATTACHED, label: 'test-attached' },
+        ],
+      },
+      {
+        id: 5,
+        summary: 'Bug with no STR or test tags',
+        tags: [{ id: TAG_IDS.CRASHSTACK, label: 'crashstack' }],
+      },
+    ];
+
+    it('should export ai-str-no-has-str preset', () => {
+      expect(PRESETS['ai-str-no-has-str']).toBeDefined();
+      expect(PRESETS['ai-str-no-has-str'].include).toContain(TAG_IDS.AI_DETECTED_STR);
+      expect(PRESETS['ai-str-no-has-str'].exclude).toContain(TAG_IDS.HAS_STR);
+    });
+
+    it('should filter ai-str-no-has-str correctly', () => {
+      const result = applyPreset(bugsForAiPresets, 'ai-str-no-has-str');
+      // Should include bugs 2, 3, 4 (have AI STR but not formal Has STR)
+      expect(result.length).toBe(3);
+      expect(result.map((b) => b.id).sort()).toEqual([2, 3, 4]);
+    });
+
+    it('should export ai-str-test-no-formal preset', () => {
+      expect(PRESETS['ai-str-test-no-formal']).toBeDefined();
+      expect(PRESETS['ai-str-test-no-formal'].include).toContain(TAG_IDS.AI_DETECTED_STR);
+      expect(PRESETS['ai-str-test-no-formal'].include).toContain(TAG_IDS.AI_DETECTED_TEST_ATTACHED);
+      expect(PRESETS['ai-str-test-no-formal'].exclude).toContain(TAG_IDS.HAS_STR);
+      expect(PRESETS['ai-str-test-no-formal'].exclude).toContain(TAG_IDS.TEST_ATTACHED);
+    });
+
+    it('should filter ai-str-test-no-formal correctly', () => {
+      const result = applyPreset(bugsForAiPresets, 'ai-str-test-no-formal');
+      // Should only include bug 3 (has both AI STR and AI test, but no formal tags)
+      expect(result.length).toBe(1);
+      expect(result[0].id).toBe(3);
+    });
+
+    it('should export needs-review preset', () => {
+      expect(PRESETS['needs-review']).toBeDefined();
+      expect(PRESETS['needs-review'].include).toContain(TAG_IDS.AI_DETECTED_STR);
+    });
+
+    it('should filter needs-review correctly', () => {
+      const result = applyPreset(bugsForAiPresets, 'needs-review');
+      // Should include bugs 2, 3, 4 (all have AI STR)
+      expect(result.length).toBe(3);
+      expect(result.map((b) => b.id).sort()).toEqual([2, 3, 4]);
+    });
+  });
 });
