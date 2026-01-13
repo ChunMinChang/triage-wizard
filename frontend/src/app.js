@@ -9,15 +9,34 @@
  * @module app
  */
 
-import * as storage from './storage.js';
-import * as config from './config.js';
 import * as bugzilla from './bugzilla.js';
-import * as tags from './tags.js';
-import * as filters from './filters.js';
 import * as ui from './ui.js';
-import * as ai from './ai.js';
-import * as cannedResponses from './cannedResponses.js';
-import * as exports from './exports.js';
+import * as config from './config.js';
+
+/** @type {Object[]} Currently loaded bugs */
+let loadedBugs = [];
+
+/** DOM element IDs used by this module */
+const DOM_IDS = {
+  BUG_INPUT: 'bug-input-field',
+  LOAD_BTN: 'load-bugs-btn',
+  PROCESS_ALL_BTN: 'process-all-btn',
+  APPLY_FILTER_BTN: 'apply-filter-btn',
+  CLEAR_FILTER_BTN: 'clear-filter-btn',
+  EXPORT_JSON_BTN: 'export-json-btn',
+  EXPORT_CSV_BTN: 'export-csv-btn',
+  EXPORT_MD_BTN: 'export-md-btn',
+  IMPORT_JSON: 'import-json',
+};
+
+/**
+ * Get a DOM element by ID with null check.
+ * @param {string} id - Element ID
+ * @returns {HTMLElement|null}
+ */
+function getElement(id) {
+  return document.getElementById(id);
+}
 
 /**
  * Initialize the application.
@@ -25,9 +44,84 @@ import * as exports from './exports.js';
  */
 export function init() {
   console.log('[app] Initializing application...');
-  // TODO: Wire event handlers
-  // TODO: Load initial config
-  // TODO: Set up UI
+  setupEventListeners();
+}
+
+/**
+ * Set up event listeners for UI controls.
+ */
+export function setupEventListeners() {
+  // Load bugs button
+  const loadBtn = getElement(DOM_IDS.LOAD_BTN);
+  if (loadBtn) {
+    loadBtn.addEventListener('click', handleLoadClick);
+  }
+
+  // Process all button
+  const processAllBtn = getElement(DOM_IDS.PROCESS_ALL_BTN);
+  if (processAllBtn) {
+    processAllBtn.addEventListener('click', handleProcessAllClick);
+  }
+
+  // Filter buttons
+  const applyFilterBtn = getElement(DOM_IDS.APPLY_FILTER_BTN);
+  if (applyFilterBtn) {
+    applyFilterBtn.addEventListener('click', handleApplyFilter);
+  }
+
+  const clearFilterBtn = getElement(DOM_IDS.CLEAR_FILTER_BTN);
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener('click', handleClearFilter);
+  }
+
+  // Export buttons
+  const exportJsonBtn = getElement(DOM_IDS.EXPORT_JSON_BTN);
+  if (exportJsonBtn) {
+    exportJsonBtn.addEventListener('click', handleExportJson);
+  }
+
+  const exportCsvBtn = getElement(DOM_IDS.EXPORT_CSV_BTN);
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', handleExportCsv);
+  }
+
+  const exportMdBtn = getElement(DOM_IDS.EXPORT_MD_BTN);
+  if (exportMdBtn) {
+    exportMdBtn.addEventListener('click', handleExportMarkdown);
+  }
+
+  // Import JSON
+  const importJson = getElement(DOM_IDS.IMPORT_JSON);
+  if (importJson) {
+    importJson.addEventListener('change', handleImportJson);
+  }
+
+  // Table action delegation
+  const tableBody = getElement('bug-table-body');
+  if (tableBody) {
+    tableBody.addEventListener('click', handleTableAction);
+  }
+}
+
+/**
+ * Handle load bugs button click.
+ */
+export async function handleLoadClick() {
+  const input = getElement(DOM_IDS.BUG_INPUT);
+  if (!input) return;
+
+  const value = input.value.trim();
+  if (!value) {
+    ui.showInfo('Please enter bug IDs or a Bugzilla URL');
+    return;
+  }
+
+  try {
+    await loadBugs(value);
+  } catch (error) {
+    // Error already shown by loadBugs
+    console.error('[app] Load failed:', error);
+  }
 }
 
 /**
@@ -36,34 +130,288 @@ export function init() {
  * @returns {Promise<Object[]>} Array of loaded bug objects
  */
 export async function loadBugs(input) {
-  // TODO: Parse input and call appropriate bugzilla method
-  console.log('[app] Loading bugs:', input);
-  return [];
+  const parsed = bugzilla.parseInputString(input);
+
+  // Handle empty input
+  if (parsed.type === 'ids' && parsed.ids.length === 0) {
+    return [];
+  }
+
+  ui.setLoading(true, 'Loading bugs...');
+
+  try {
+    let bugs = [];
+    const cfg = config.getConfig();
+
+    if (parsed.type === 'ids') {
+      bugs = await bugzilla.loadBugsByIds(parsed.ids);
+    } else if (parsed.type === 'rest') {
+      bugs = await bugzilla.loadBugsByRestUrl(parsed.url);
+    } else if (parsed.type === 'buglist') {
+      const restUrl = bugzilla.parseBuglistUrl(parsed.url);
+      if (!restUrl) {
+        throw new Error('Could not parse buglist.cgi URL. Try using a REST URL instead.');
+      }
+      bugs = await bugzilla.loadBugsByRestUrl(restUrl);
+    }
+
+    // Store loaded bugs
+    loadedBugs = bugs;
+
+    // Render table
+    ui.renderBugTable(bugs, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls with available tags
+    const availableTags = collectAvailableTags(bugs);
+    ui.updateFilterControls(availableTags, {});
+
+    return bugs;
+  } catch (error) {
+    ui.showError(error.message, {});
+    throw error;
+  } finally {
+    ui.setLoading(false);
+  }
 }
 
 /**
- * Process a single bug (compute tags, optionally run AI).
+ * Process a single bug (compute tags, optionally fetch details).
  * @param {Object} bug - Bug object to process
- * @param {Object} options - Processing options
- * @returns {Promise<Object>} Processed bug with tags and analysis
+ * @param {Object} [options] - Processing options
+ * @param {boolean} [options.fetchDetails] - Whether to fetch attachments and comments
+ * @returns {Promise<Object>} Processed bug with tags
  */
 export async function processBug(bug, options = {}) {
-  // TODO: Compute heuristic tags
-  // TODO: Optionally run AI classification
-  console.log('[app] Processing bug:', bug?.id);
-  return bug;
+  const processed = { ...bug };
+
+  // Ensure tags array exists
+  if (!processed.tags) {
+    processed.tags = [];
+  }
+
+  // Fetch details if requested
+  if (options.fetchDetails) {
+    try {
+      processed.attachments = await bugzilla.fetchAttachments(bug.id);
+    } catch (error) {
+      console.warn('[app] Failed to fetch attachments:', error);
+      processed.attachments = [];
+    }
+
+    try {
+      processed.comments = await bugzilla.fetchComments(bug.id);
+    } catch (error) {
+      console.warn('[app] Failed to fetch comments:', error);
+      processed.comments = [];
+    }
+  }
+
+  // TODO: Compute heuristic tags (L2-F1)
+  // TODO: Run AI classification if configured (L3)
+
+  return processed;
 }
 
 /**
  * Process all loaded bugs.
  * @param {Object[]} bugs - Array of bugs to process
- * @param {Object} options - Processing options
+ * @param {Object} [options] - Processing options
  * @returns {Promise<Object[]>} Array of processed bugs
  */
 export async function processAllBugs(bugs, options = {}) {
-  // TODO: Batch process bugs
-  console.log('[app] Processing all bugs:', bugs?.length);
-  return bugs;
+  if (!bugs || bugs.length === 0) {
+    return [];
+  }
+
+  ui.setLoading(true, `Processing ${bugs.length} bugs...`);
+
+  try {
+    const processed = [];
+    for (const bug of bugs) {
+      const result = await processBug(bug, options);
+      processed.push(result);
+    }
+
+    // Update stored bugs
+    loadedBugs = processed;
+
+    // Re-render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(processed, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls
+    const availableTags = collectAvailableTags(processed);
+    ui.updateFilterControls(availableTags, {});
+
+    ui.showSuccess(`Processed ${processed.length} bugs`);
+
+    return processed;
+  } finally {
+    ui.setLoading(false);
+  }
+}
+
+/**
+ * Get currently loaded bugs.
+ * @returns {Object[]} Array of loaded bug objects
+ */
+export function getLoadedBugs() {
+  return loadedBugs;
+}
+
+/**
+ * Clear all loaded bugs.
+ */
+export function clearBugs() {
+  loadedBugs = [];
+  ui.clearBugTable();
+}
+
+/**
+ * Collect all unique tag IDs from bugs.
+ * @param {Object[]} bugs - Array of bugs
+ * @returns {string[]} Array of unique tag IDs
+ */
+function collectAvailableTags(bugs) {
+  const tagSet = new Set();
+  bugs.forEach((bug) => {
+    if (bug.tags && Array.isArray(bug.tags)) {
+      bug.tags.forEach((tag) => {
+        tagSet.add(tag.id);
+      });
+    }
+  });
+  return Array.from(tagSet).sort();
+}
+
+/**
+ * Handle process all button click.
+ */
+async function handleProcessAllClick() {
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs loaded. Load bugs first.');
+    return;
+  }
+
+  try {
+    await processAllBugs(loadedBugs);
+  } catch (error) {
+    ui.showError('Failed to process bugs: ' + error.message);
+  }
+}
+
+/**
+ * Handle apply filter button click.
+ */
+function handleApplyFilter() {
+  // TODO: Implement filtering (L2-F3, L2-F4)
+  console.log('[app] Apply filter clicked');
+}
+
+/**
+ * Handle clear filter button click.
+ */
+function handleClearFilter() {
+  // TODO: Implement filter clearing (L2-F4)
+  console.log('[app] Clear filter clicked');
+}
+
+/**
+ * Handle export JSON button click.
+ */
+function handleExportJson() {
+  // TODO: Implement JSON export (L4-F8)
+  console.log('[app] Export JSON clicked');
+}
+
+/**
+ * Handle export CSV button click.
+ */
+function handleExportCsv() {
+  // TODO: Implement CSV export (L4-F8)
+  console.log('[app] Export CSV clicked');
+}
+
+/**
+ * Handle export Markdown button click.
+ */
+function handleExportMarkdown() {
+  // TODO: Implement Markdown export (L4-F8)
+  console.log('[app] Export Markdown clicked');
+}
+
+/**
+ * Handle import JSON file change.
+ * @param {Event} event - File input change event
+ */
+function handleImportJson(event) {
+  // TODO: Implement JSON import (L4-F9)
+  console.log('[app] Import JSON:', event.target?.files);
+}
+
+/**
+ * Handle table action button clicks (delegation).
+ * @param {Event} event - Click event
+ */
+function handleTableAction(event) {
+  const btn = event.target.closest('button[data-action]');
+  if (!btn) return;
+
+  const action = btn.dataset.action;
+  const bugId = btn.dataset.bugId;
+
+  if (action === 'process') {
+    handleProcessSingleBug(bugId);
+  } else if (action === 'toggle-summary') {
+    handleToggleSummary(bugId);
+  }
+}
+
+/**
+ * Handle process single bug action.
+ * @param {string} bugId - Bug ID
+ */
+async function handleProcessSingleBug(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  ui.setLoading(true, `Processing bug ${bugId}...`);
+
+  try {
+    const processed = await processBug(bug, { fetchDetails: true });
+
+    // Update in loaded bugs array
+    const index = loadedBugs.findIndex((b) => String(b.id) === String(bugId));
+    if (index !== -1) {
+      loadedBugs[index] = processed;
+    }
+
+    // Re-render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+    ui.showSuccess(`Processed bug ${bugId}`);
+  } catch (error) {
+    ui.showError(`Failed to process bug ${bugId}: ${error.message}`);
+  } finally {
+    ui.setLoading(false);
+  }
+}
+
+/**
+ * Handle toggle summary action.
+ * @param {string} bugId - Bug ID
+ */
+function handleToggleSummary(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) return;
+
+  // Use AI summary if available, otherwise placeholder
+  const summary = bug.aiSummary || 'No AI summary available. Click "Process" to generate one.';
+  ui.toggleSummary(bugId, summary);
 }
 
 // Auto-initialize when DOM is ready
