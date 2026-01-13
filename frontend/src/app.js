@@ -16,6 +16,7 @@ import * as filters from './filters.js';
 import * as tags from './tags.js';
 import * as ai from './ai.js';
 import * as cannedResponses from './cannedResponses.js';
+import * as exports from './exports.js';
 
 /** @type {Object[]} Currently loaded bugs */
 let loadedBugs = [];
@@ -615,33 +616,101 @@ export function clearFilter() {
  * Handle export JSON button click.
  */
 function handleExportJson() {
-  // TODO: Implement JSON export (L4-F8)
-  console.log('[app] Export JSON clicked');
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const metadata = {
+    bugzillaHost: cfg.bugzillaHost,
+    input: { bugCount: loadedBugs.length },
+    aiProvider: cfg.aiProvider,
+    aiModel: cfg.aiModel,
+    aiTransport: cfg.aiTransport,
+  };
+
+  const jsonContent = exports.exportJSON(loadedBugs, metadata);
+  const filename = exports.generateFilename('triage-export', 'json');
+
+  exports.downloadFile(jsonContent, filename, 'application/json');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
 }
 
 /**
  * Handle export CSV button click.
  */
 function handleExportCsv() {
-  // TODO: Implement CSV export (L4-F8)
-  console.log('[app] Export CSV clicked');
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const csvContent = exports.exportCSV(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+  const filename = exports.generateFilename('triage-export', 'csv');
+
+  exports.downloadFile(csvContent, filename, 'text/csv');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
 }
 
 /**
  * Handle export Markdown button click.
  */
 function handleExportMarkdown() {
-  // TODO: Implement Markdown export (L4-F8)
-  console.log('[app] Export Markdown clicked');
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const mdContent = exports.exportMarkdown(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+  const filename = exports.generateFilename('triage-export', 'md');
+
+  exports.downloadFile(mdContent, filename, 'text/markdown');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
 }
 
 /**
  * Handle import JSON file change.
  * @param {Event} event - File input change event
  */
-function handleImportJson(event) {
-  // TODO: Implement JSON import (L4-F9)
-  console.log('[app] Import JSON:', event.target?.files);
+async function handleImportJson(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const result = exports.importJSON(text);
+
+    if (result.errors && result.errors.length > 0) {
+      ui.showError(`Import failed: ${result.errors.join(', ')}`);
+      return;
+    }
+
+    if (!result.bugs || result.bugs.length === 0) {
+      ui.showInfo('No bugs found in import file');
+      return;
+    }
+
+    // Update loaded bugs
+    loadedBugs = result.bugs;
+
+    // Render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls
+    const availableTags = collectAvailableTags(loadedBugs);
+    ui.updateFilterControls(availableTags, {});
+
+    ui.showSuccess(`Imported ${result.bugs.length} bugs from ${file.name}`);
+  } catch (err) {
+    ui.showError(`Failed to import: ${err.message}`);
+  }
+
+  // Reset file input
+  event.target.value = '';
 }
 
 /**
@@ -661,6 +730,8 @@ function handleTableAction(event) {
     handleToggleSummary(bugId);
   } else if (action === 'compose') {
     handleComposeBug(bugId);
+  } else if (action === 'set-has-str') {
+    handleSetHasStr(bugId);
   }
 }
 
@@ -709,6 +780,68 @@ function handleToggleSummary(bugId) {
   // Use AI summary if available, otherwise placeholder
   const summary = bug.aiSummary || 'No AI summary available. Click "Process" to generate one.';
   ui.toggleSummary(bugId, summary);
+}
+
+/**
+ * Handle set Has STR action.
+ * @param {string} bugId - Bug ID
+ */
+async function handleSetHasStr(bugId) {
+  const cfg = config.getConfig();
+
+  if (!cfg.bugzillaApiKey) {
+    ui.showError('Bugzilla API key required. Please configure in Settings.');
+    return;
+  }
+
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  // Check if already has STR
+  if (bug.cfHasStr === 'yes') {
+    ui.showInfo(`Bug ${bugId} already has "Has STR" set`);
+    return;
+  }
+
+  ui.setLoading(true, `Setting Has STR on bug ${bugId}...`);
+
+  try {
+    const success = await bugzilla.setHasStr(bugId, cfg.bugzillaApiKey);
+
+    if (success) {
+      // Update local bug state
+      bug.cfHasStr = 'yes';
+
+      // Remove hasStrSuggested since it's now set
+      bug.hasStrSuggested = false;
+
+      // Update the has-str tag if not present
+      const hasStrTag = bug.tags?.find((t) => t.id === 'has-str');
+      if (!hasStrTag) {
+        bug.tags = bug.tags || [];
+        bug.tags.push({
+          id: 'has-str',
+          label: 'Has STR',
+          source: 'field',
+          evidence: 'cf_has_str = yes (set via triage wizard)',
+        });
+      }
+
+      // Re-render the table to reflect changes
+      ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+      ui.showSuccess(`Set "Has STR" on bug ${bugId}`);
+    } else {
+      ui.showError(`Failed to set "Has STR" on bug ${bugId}`);
+    }
+  } catch (error) {
+    ui.showError(`Error setting "Has STR": ${error.message}`);
+  } finally {
+    ui.setLoading(false);
+  }
 }
 
 /**
@@ -785,9 +918,53 @@ export async function handlePostResponse() {
     return;
   }
 
-  // TODO: Post to Bugzilla API (L4-F7)
-  ui.showInfo('Posting to Bugzilla is not yet implemented');
-  console.log('[app] Would post to bug', bugId, ':', body);
+  const cfg = config.getConfig();
+
+  if (!cfg.bugzillaApiKey) {
+    ui.showError('Bugzilla API key required. Please configure in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const postBtn = getElement(DOM_IDS.POST_RESPONSE_BTN);
+  if (postBtn) {
+    postBtn.disabled = true;
+    postBtn.textContent = 'Posting...';
+  }
+
+  try {
+    const success = await bugzilla.postComment(bugId, body.trim(), cfg.bugzillaApiKey);
+
+    if (success) {
+      ui.showSuccess(`Comment posted to bug ${bugId}`);
+
+      // Close the composer modal
+      ui.closeResponseComposer();
+
+      // Update local bug state to reflect new comment
+      const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+      if (bug) {
+        // Add a placeholder comment (actual content will be fetched on next load)
+        bug.comments = bug.comments || [];
+        bug.comments.push({
+          text: body.trim(),
+          author: 'You',
+          creation_time: new Date().toISOString(),
+          isDescription: false,
+        });
+      }
+    } else {
+      ui.showError(`Failed to post comment to bug ${bugId}`);
+    }
+  } catch (error) {
+    ui.showError(`Error posting comment: ${error.message}`);
+    console.error('[app] Post comment error:', error);
+  } finally {
+    if (postBtn) {
+      postBtn.disabled = false;
+      postBtn.textContent = 'Post to Bugzilla';
+    }
+  }
 }
 
 /**

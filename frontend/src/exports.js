@@ -41,29 +41,155 @@ export function exportJSON(bugs, metadata = {}) {
 }
 
 /**
+ * Escape a value for CSV (handle quotes and commas).
+ * @param {*} value - Value to escape
+ * @returns {string} Escaped value
+ */
+function escapeCSV(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const str = String(value);
+  // If the value contains comma, quote, or newline, wrap in quotes and escape inner quotes
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+/**
  * Export bugs as CSV.
  * Columns: bug_id, bug_url, summary_bugzilla, status, product, component,
  *          severity, cf_has_str, has_str_suggested, tags, summary_ai
  *
  * @param {Object[]} bugs - Bugs to export
+ * @param {Object} [options] - Export options
+ * @param {string} [options.bugzillaHost] - Bugzilla host URL for bug links
  * @returns {string} CSV string
  */
-export function exportCSV(bugs) {
-  // TODO: Generate CSV with headers and rows
-  console.log('[exports] Exporting CSV:', bugs?.length, 'bugs');
-  return '';
+export function exportCSV(bugs, options = {}) {
+  if (!bugs || bugs.length === 0) {
+    return '';
+  }
+
+  const bugzillaHost = options.bugzillaHost || 'https://bugzilla.mozilla.org';
+
+  // Define headers
+  const headers = [
+    'bug_id',
+    'bug_url',
+    'summary',
+    'status',
+    'resolution',
+    'product',
+    'component',
+    'severity',
+    'priority',
+    'cf_has_str',
+    'has_str_suggested',
+    'tags',
+    'ai_summary',
+  ];
+
+  // Build rows
+  const rows = bugs.map((bug) => {
+    const tagList = (bug.tags || []).map((t) => t.id || t.label).join('; ');
+
+    return [
+      bug.id,
+      `${bugzillaHost}/show_bug.cgi?id=${bug.id}`,
+      bug.summary || '',
+      bug.status || '',
+      bug.resolution || '',
+      bug.product || '',
+      bug.component || '',
+      bug.severity || '',
+      bug.priority || '',
+      bug.cfHasStr || '',
+      bug.hasStrSuggested ? 'yes' : 'no',
+      tagList,
+      bug.aiSummary || '',
+    ].map(escapeCSV);
+  });
+
+  // Combine headers and rows
+  const csvLines = [headers.join(','), ...rows.map((row) => row.join(','))];
+
+  return csvLines.join('\n');
+}
+
+/**
+ * Escape a value for Markdown table cells.
+ * @param {*} value - Value to escape
+ * @returns {string} Escaped value
+ */
+function escapeMD(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  const str = String(value);
+  // Escape pipe characters and newlines (replace newlines with <br>)
+  return str
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, '');
 }
 
 /**
  * Export bugs as Markdown table.
  * @param {Object[]} bugs - Bugs to export
  * @param {Object} options - Export options
+ * @param {string} [options.bugzillaHost] - Bugzilla host URL for bug links
+ * @param {boolean} [options.includeAiSummary] - Include AI summary column
  * @returns {string} Markdown string
  */
 export function exportMarkdown(bugs, options = {}) {
-  // TODO: Generate Markdown table
-  console.log('[exports] Exporting Markdown:', bugs?.length, 'bugs');
-  return '';
+  if (!bugs || bugs.length === 0) {
+    return '# Bug Triage Report\n\nNo bugs to export.\n';
+  }
+
+  const bugzillaHost = options.bugzillaHost || 'https://bugzilla.mozilla.org';
+  const includeAiSummary = options.includeAiSummary !== false;
+
+  const lines = [];
+
+  // Title
+  lines.push('# Bug Triage Report');
+  lines.push('');
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push(`Total bugs: ${bugs.length}`);
+  lines.push('');
+
+  // Table header
+  const headers = ['Bug ID', 'Status', 'Product/Component', 'Summary', 'Tags'];
+  if (includeAiSummary) {
+    headers.push('AI Summary');
+  }
+  lines.push('| ' + headers.join(' | ') + ' |');
+  lines.push('| ' + headers.map(() => '---').join(' | ') + ' |');
+
+  // Table rows
+  for (const bug of bugs) {
+    const bugLink = `[${bug.id}](${bugzillaHost}/show_bug.cgi?id=${bug.id})`;
+    const status = bug.resolution ? `${bug.status} (${bug.resolution})` : bug.status || '';
+    const productComponent = `${bug.product || ''}/${bug.component || ''}`;
+    const summary = escapeMD(bug.summary || '').substring(0, 80);
+    const tagList = (bug.tags || []).map((t) => `\`${t.id || t.label}\``).join(' ');
+
+    const row = [bugLink, status, productComponent, summary, tagList];
+    if (includeAiSummary) {
+      const aiSummary = escapeMD(bug.aiSummary || '').substring(0, 100);
+      row.push(aiSummary || '-');
+    }
+
+    lines.push('| ' + row.join(' | ') + ' |');
+  }
+
+  lines.push('');
+  lines.push('---');
+  lines.push('*Exported from Bugzilla Bug Triage Helper*');
+
+  return lines.join('\n');
 }
 
 /**
@@ -120,8 +246,32 @@ export function migrateSchema(data) {
  * @param {string} mimeType - MIME type
  */
 export function downloadFile(content, filename, mimeType = 'application/json') {
-  // TODO: Create blob and trigger download
-  console.log('[exports] Downloading file:', filename);
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+
+  // Append to body, click, and remove
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Revoke the URL to free memory
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Generate a filename with timestamp.
+ * @param {string} prefix - Filename prefix
+ * @param {string} extension - File extension
+ * @returns {string} Filename with timestamp
+ */
+export function generateFilename(prefix, extension) {
+  const date = new Date();
+  const timestamp = date.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return `${prefix}-${timestamp}.${extension}`;
 }
 
 console.log('[exports] Module loaded');
