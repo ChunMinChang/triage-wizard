@@ -124,6 +124,15 @@ export function renderBugRow(bug, options = {}) {
   const tagsCell = row.querySelector('.tags-cell');
   tagsCell.appendChild(renderTags(bug.tags));
 
+  // Add suggested response badge if applicable
+  if (bug.suggestedResponseId) {
+    const suggestionBadge = document.createElement('span');
+    suggestionBadge.className = 'tag-badge tag-suggestion';
+    suggestionBadge.textContent = `Suggest: ${bug.suggestedResponseId}`;
+    suggestionBadge.title = 'Click Compose to use this suggested response';
+    tagsCell.appendChild(suggestionBadge);
+  }
+
   // Add action buttons
   const actionsCell = row.querySelector('.actions-cell');
   actionsCell.appendChild(renderActions(bug));
@@ -545,6 +554,25 @@ export function openResponseComposer(bug, cannedResponses) {
     textarea.value = '';
   }
 
+  // Auto-select suggested response if available
+  if (bug?.suggestedResponseId && select) {
+    const options = Array.from(select.options);
+    const matchingOption = options.find((opt) => opt.value === bug.suggestedResponseId);
+    if (matchingOption) {
+      select.value = bug.suggestedResponseId;
+      // Find and load the response template
+      const suggestedResponse = cannedResponses?.find((r) => r.id === bug.suggestedResponseId);
+      if (suggestedResponse && textarea) {
+        textarea.value = suggestedResponse.bodyTemplate || '';
+      }
+      // Show a toast notification
+      showInfo(`Auto-selected: ${bug.suggestedResponseId}`);
+    }
+  }
+
+  // Hide suggested actions panel when opening composer
+  hideSuggestedActions();
+
   // Show modal
   modal.hidden = false;
 }
@@ -670,6 +698,122 @@ export function clearReasoningPanel() {
   if (panel) {
     panel.open = false;
   }
+}
+
+/**
+ * Show suggested actions in the prominent actions panel.
+ * @param {Array} actions - Array of action objects {action, reason, fields}
+ */
+export function showSuggestedActions(actions) {
+  const panel = document.getElementById('suggested-actions-panel');
+  const list = document.getElementById('suggested-actions-list');
+
+  if (!panel || !list) return;
+
+  // Clear existing actions
+  list.innerHTML = '';
+
+  if (!actions || actions.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+
+  // Create action buttons
+  actions.forEach((action) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'action-btn';
+    btn.dataset.action = action.action;
+
+    // Store additional data for some action types
+    if (action.fields && Array.isArray(action.fields)) {
+      btn.dataset.fields = action.fields.join(',');
+    }
+
+    // Map action types to display labels and styles
+    const actionConfig = getActionConfig(action.action);
+    btn.innerHTML = `<span class="action-icon">${actionConfig.icon}</span>${actionConfig.label}`;
+
+    if (actionConfig.className) {
+      btn.classList.add(actionConfig.className);
+    }
+
+    // Add tooltip with reason
+    if (action.reason) {
+      btn.title = action.reason;
+    }
+
+    list.appendChild(btn);
+  });
+
+  // Show the panel
+  panel.hidden = false;
+}
+
+/**
+ * Hide the suggested actions panel.
+ */
+export function hideSuggestedActions() {
+  const panel = document.getElementById('suggested-actions-panel');
+  if (panel) {
+    panel.hidden = true;
+  }
+}
+
+/**
+ * Get display configuration for an action type.
+ * @param {string} actionType - Action type identifier
+ * @returns {Object} Configuration with icon, label, className
+ */
+function getActionConfig(actionType) {
+  const configs = {
+    'set-has-str': {
+      icon: '✓',
+      label: 'Set Has STR',
+      className: '',
+    },
+    'need-info': {
+      icon: '❓',
+      label: 'Request Info',
+      className: 'action-btn-warning',
+    },
+    'request-str': {
+      icon: '📝',
+      label: 'Request STR',
+      className: '',
+    },
+    'request-profile': {
+      icon: '📊',
+      label: 'Request Profile',
+      className: '',
+    },
+    'close-duplicate': {
+      icon: '🔗',
+      label: 'Mark Duplicate',
+      className: 'action-btn-danger',
+    },
+    'close-wontfix': {
+      icon: '✕',
+      label: 'Close WONTFIX',
+      className: 'action-btn-danger',
+    },
+    'assign': {
+      icon: '👤',
+      label: 'Assign',
+      className: '',
+    },
+    'set-priority': {
+      icon: '⚡',
+      label: 'Set Priority',
+      className: '',
+    },
+  };
+
+  return configs[actionType] || {
+    icon: '•',
+    label: actionType,
+    className: '',
+  };
 }
 
 /**

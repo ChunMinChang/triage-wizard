@@ -782,6 +782,76 @@ button:disabled {
   background: #d5d5d5;
 }
 
+/* Suggested Actions panel styles */
+.suggested-actions-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 2px solid #28a745;
+  border-radius: 8px;
+  background: #f0fff4;
+}
+
+.suggested-actions-panel h4 {
+  margin: 0 0 0.75rem 0;
+  color: #28a745;
+  font-size: 1rem;
+}
+
+.suggested-actions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #28a745;
+  border-radius: 4px;
+  background: white;
+  color: #28a745;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background: #28a745;
+  color: white;
+}
+
+.action-btn:disabled {
+  border-color: #ccc;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.action-btn .action-icon {
+  font-size: 1rem;
+}
+
+.action-btn-danger {
+  border-color: #dc3545;
+  color: #dc3545;
+}
+
+.action-btn-danger:hover {
+  background: #dc3545;
+  color: white;
+}
+
+.action-btn-warning {
+  border-color: #ffc107;
+  color: #856404;
+}
+
+.action-btn-warning:hover {
+  background: #ffc107;
+  color: #212529;
+}
+
 /* AI Reasoning panel styles */
 .ai-reasoning-panel {
   margin-top: 1rem;

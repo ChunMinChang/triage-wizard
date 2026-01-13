@@ -193,6 +193,7 @@
             <button id="ai-suggest-btn" type="button" class="btn-ai-secondary">AI Suggest</button>
             <button id="ai-customize-btn" type="button" class="btn-ai">AI Customize</button>
             <button id="ai-generate-btn" type="button" class="btn-ai-primary">AI Generate</button>
+            <button id="ai-actions-btn" type="button" class="btn-ai-secondary">Suggest Actions</button>
           </div>
         </div>
         <div class="composer-editor">
@@ -210,6 +211,12 @@
             <button type="button" class="chip" data-instruction="Use a friendlier tone">Friendlier</button>
             <button type="button" class="chip" data-instruction="Add request for STR">+STR request</button>
             <button type="button" class="chip" data-instruction="Add request for crash profile">+Profile</button>
+          </div>
+        </div>
+        <div id="suggested-actions-panel" class="suggested-actions-panel" hidden>
+          <h4>Suggested Actions</h4>
+          <div id="suggested-actions-list" class="suggested-actions-list">
+            <!-- Action buttons will be populated by JS -->
           </div>
         </div>
         <details class="ai-reasoning-panel" id="ai-reasoning-panel">

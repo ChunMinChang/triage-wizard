@@ -51,6 +51,9 @@ const DOM_IDS = {
   AI_CUSTOMIZE_BTN: 'ai-customize-btn',
   AI_SUGGEST_BTN: 'ai-suggest-btn',
   AI_GENERATE_BTN: 'ai-generate-btn',
+  AI_ACTIONS_BTN: 'ai-actions-btn',
+  SUGGESTED_ACTIONS_PANEL: 'suggested-actions-panel',
+  SUGGESTED_ACTIONS_LIST: 'suggested-actions-list',
   REFINE_INSTRUCTION: 'refine-instruction',
   REFINE_BTN: 'refine-btn',
   REFINE_CHIPS: 'refine-chips',
@@ -199,6 +202,18 @@ export function setupEventListeners() {
     aiGenerateBtn.addEventListener('click', handleAiGenerate);
   }
 
+  // AI Suggest Actions button
+  const aiActionsBtn = getElement(DOM_IDS.AI_ACTIONS_BTN);
+  if (aiActionsBtn) {
+    aiActionsBtn.addEventListener('click', handleAiSuggestActions);
+  }
+
+  // Suggested actions list delegation
+  const suggestedActionsList = getElement(DOM_IDS.SUGGESTED_ACTIONS_LIST);
+  if (suggestedActionsList) {
+    suggestedActionsList.addEventListener('click', handleSuggestedActionClick);
+  }
+
   // Refine button
   const refineBtn = getElement(DOM_IDS.REFINE_BTN);
   if (refineBtn) {
@@ -230,6 +245,59 @@ export function setupEventListeners() {
         handleCloseComposer();
       }
     });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleKeyboardShortcuts);
+}
+
+/**
+ * Handle keyboard shortcuts for the composer.
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleKeyboardShortcuts(event) {
+  const composerModal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  const isComposerOpen = composerModal && !composerModal.hidden;
+
+  // Escape - close modal
+  if (event.key === 'Escape' && isComposerOpen) {
+    event.preventDefault();
+    handleCloseComposer();
+    return;
+  }
+
+  // Only handle other shortcuts if composer is open
+  if (!isComposerOpen) return;
+
+  // Ctrl+Enter - Copy to clipboard
+  if (event.ctrlKey && !event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    handleCopyResponse();
+    return;
+  }
+
+  // Ctrl+Shift+Enter - Post to Bugzilla
+  if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    handlePostResponse();
+    return;
+  }
+
+  // Ctrl+G - AI Generate
+  if (event.ctrlKey && (event.key === 'g' || event.key === 'G')) {
+    event.preventDefault();
+    handleAiGenerate();
+    return;
+  }
+
+  // Ctrl+R - Focus refine input
+  if (event.ctrlKey && (event.key === 'r' || event.key === 'R')) {
+    event.preventDefault();
+    const refineInput = getElement(DOM_IDS.REFINE_INSTRUCTION);
+    if (refineInput) {
+      refineInput.focus();
+    }
+    return;
   }
 }
 
@@ -370,7 +438,36 @@ export async function processBug(bug, options = {}) {
     processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
   }
 
+  // Auto-suggest response based on tags
+  processed.suggestedResponseId = getSuggestedResponseId(processed);
+
   return processed;
+}
+
+/**
+ * Determine which canned response to suggest based on bug tags.
+ * @param {Object} bug - Bug with computed tags
+ * @returns {string|null} Suggested response ID or null
+ */
+function getSuggestedResponseId(bug) {
+  const tagIds = (bug.tags || []).map((t) => t.id);
+
+  // If no Has STR and hasStrSuggested is true, suggest need-str
+  if (bug.hasStrSuggested && !tagIds.includes('has-str')) {
+    return 'need-str';
+  }
+
+  // If fuzzy-test-attached, suggest fuzzing-thanks
+  if (tagIds.includes('fuzzy-test-attached')) {
+    return 'fuzzing-thanks';
+  }
+
+  // If crashstack present and no AI-detected STR, suggest need-profile
+  if (tagIds.includes('crashstack') && !tagIds.includes('ai-detected-str')) {
+    return 'need-profile';
+  }
+
+  return null;
 }
 
 /**
@@ -1186,6 +1283,160 @@ export async function handleAiGenerate() {
       generateBtn.disabled = false;
       generateBtn.textContent = 'AI Generate';
     }
+  }
+}
+
+/**
+ * Handle AI suggest actions button click.
+ * Gets triage action recommendations without drafting a comment.
+ */
+export async function handleAiSuggestActions() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const actionsBtn = getElement(DOM_IDS.AI_ACTIONS_BTN);
+  if (actionsBtn) {
+    actionsBtn.disabled = true;
+    actionsBtn.textContent = 'Analyzing...';
+  }
+
+  try {
+    const result = await ai.generateResponse(
+      bug,
+      { mode: 'next-steps' },
+      aiConfig
+    );
+
+    // Display suggested actions prominently
+    ui.showSuggestedActions(result.suggested_actions || []);
+
+    // Also update reasoning panel
+    ui.updateReasoningPanel(result);
+
+    if (result.suggested_actions && result.suggested_actions.length > 0) {
+      ui.showSuccess(`Found ${result.suggested_actions.length} suggested action(s)`);
+    } else {
+      ui.showInfo('No specific actions suggested for this bug');
+    }
+  } catch (err) {
+    ui.showError(`AI analysis failed: ${err.message}`);
+    console.error('[app] AI suggest actions error:', err);
+  } finally {
+    if (actionsBtn) {
+      actionsBtn.disabled = false;
+      actionsBtn.textContent = 'Suggest Actions';
+    }
+  }
+}
+
+/**
+ * Handle click on a suggested action button.
+ * @param {Event} event - Click event
+ */
+export async function handleSuggestedActionClick(event) {
+  const actionBtn = event.target.closest('.action-btn');
+  if (!actionBtn) return;
+
+  const action = actionBtn.dataset.action;
+  const bugId = ui.getComposerBugId();
+
+  if (!bugId || !action) return;
+
+  const cfg = config.getConfig();
+
+  // Handle different action types
+  if (action === 'set-has-str') {
+    if (!cfg.bugzillaApiKey) {
+      ui.showError('Bugzilla API key required. Please configure in Settings.');
+      return;
+    }
+
+    actionBtn.disabled = true;
+    actionBtn.textContent = 'Setting...';
+
+    try {
+      const success = await bugzilla.setHasStr(bugId, cfg.bugzillaApiKey);
+      if (success) {
+        // Update local bug state
+        const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+        if (bug) {
+          bug.cfHasStr = 'yes';
+          bug.hasStrSuggested = false;
+        }
+        ui.showSuccess(`Set "Has STR" on bug ${bugId}`);
+        // Hide the action button since it's done
+        actionBtn.remove();
+      } else {
+        ui.showError('Failed to set "Has STR"');
+        actionBtn.disabled = false;
+        actionBtn.textContent = 'Set Has STR';
+      }
+    } catch (err) {
+      ui.showError(`Error: ${err.message}`);
+      actionBtn.disabled = false;
+      actionBtn.textContent = 'Set Has STR';
+    }
+  } else if (action === 'need-info') {
+    // For need-info, we can suggest adding it to the response
+    const fields = actionBtn.dataset.fields?.split(',') || [];
+    const suggestion = fields.length > 0
+      ? `Please provide: ${fields.join(', ')}`
+      : 'Need more information from reporter.';
+
+    const currentBody = ui.getComposerResponseBody();
+    if (currentBody) {
+      ui.setComposerResponseBody(currentBody + '\n\n' + suggestion);
+    } else {
+      ui.setComposerResponseBody(suggestion);
+    }
+    ui.showInfo('Added info request to response');
+  } else if (action === 'request-str') {
+    // Add STR request to response
+    const currentBody = ui.getComposerResponseBody();
+    const strRequest = 'Could you please provide steps to reproduce (STR) this issue?';
+    if (currentBody) {
+      ui.setComposerResponseBody(currentBody + '\n\n' + strRequest);
+    } else {
+      ui.setComposerResponseBody(strRequest);
+    }
+    ui.showInfo('Added STR request to response');
+  } else if (action === 'request-profile') {
+    // Add profile request to response
+    const currentBody = ui.getComposerResponseBody();
+    const profileRequest = 'Could you please provide a crash profile? See: https://developer.mozilla.org/docs/Mozilla/Performance/Reporting_a_Performance_Problem';
+    if (currentBody) {
+      ui.setComposerResponseBody(currentBody + '\n\n' + profileRequest);
+    } else {
+      ui.setComposerResponseBody(profileRequest);
+    }
+    ui.showInfo('Added profile request to response');
+  } else {
+    ui.showInfo(`Action "${action}" is not yet implemented`);
   }
 }
 
