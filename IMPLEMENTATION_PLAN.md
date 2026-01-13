@@ -69,9 +69,9 @@ When working on any task in this plan, follow this TDD workflow:
 - [x] L0-F2: Basic CSS Foundation ✓
 - [x] L0-F4: Storage Module (depends on L0-F3) ✓
 
-### Next: Layer 1 (after Layer 0 complete)
-- L1-F1: Config Module ★
-- L1-F2: Bugzilla REST Integration ★ (HIGHEST IMPACT)
+### Layer 1 (in progress)
+- [x] L1-F1: Config Module ★ ✓
+- [ ] L1-F2: Bugzilla REST Integration ★ (HIGHEST IMPACT)
 - L1-F3: Basic UI Rendering
 - L1-F4: App Orchestration ★
 

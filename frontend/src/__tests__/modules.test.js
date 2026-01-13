@@ -102,7 +102,7 @@ describe('Config validation', () => {
     const { DEFAULTS } = await import('../config.js');
 
     expect(DEFAULTS.bugzillaHost).toBe('https://bugzilla.mozilla.org');
-    expect(DEFAULTS.aiProvider).toBe('gemini');
+    expect(DEFAULTS.aiProvider).toBe('none');
     expect(DEFAULTS.aiTransport).toBe('browser');
   });
 });
