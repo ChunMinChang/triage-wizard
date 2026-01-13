@@ -81,6 +81,12 @@ When working on any task in this plan, follow this TDD workflow:
 - [x] L2-F3: Filter Engine ✓
 - [x] L2-F4: Filter UI ✓
 
+### Layer 3: AI Integration (in progress)
+- [x] L3-F1: AI Provider Abstraction ★ ✓
+- [ ] L3-F2: Gemini Browser Integration
+- [ ] L3-F3: Claude Browser Integration
+- [ ] L3-F4: AI UI Integration
+
 ---
 
 ## Dependencies & Critical Path
@@ -98,13 +104,13 @@ L0-F3 ★ → L1-F1 ★ → L1-F2 ★ → L1-F4 ★ → L2-F1 ★ → L2-F3
 ```
 
 **Critical Path Tasks** (must be completed in order for core functionality):
-1. L0-F1 (HTML skeleton)
-2. L0-F3 (Module structure)
-3. L1-F1 (Config module)
-4. L1-F2 (Bugzilla integration) ← **HIGHEST IMPACT**
-5. L1-F4 (App orchestration)
-6. L2-F1 (Heuristic tagging) ← **CORE LOGIC**
-7. L3-F1 (AI abstraction) ← **ENABLES AI FEATURES**
+1. L0-F1 (HTML skeleton) ✓
+2. L0-F3 (Module structure) ✓
+3. L1-F1 (Config module) ✓
+4. L1-F2 (Bugzilla integration) ← **HIGHEST IMPACT** ✓
+5. L1-F4 (App orchestration) ✓
+6. L2-F1 (Heuristic tagging) ← **CORE LOGIC** ✓
+7. L3-F1 (AI abstraction) ← **ENABLES AI FEATURES** ✓
 8. L3-F4 (AI UI integration)
 
 ---
