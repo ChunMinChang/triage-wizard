@@ -22,8 +22,28 @@ import * as storage from './storage.js';
  * @property {string[]} [categories] - Category tags
  */
 
+/** Storage key for localStorage persistence */
+export const STORAGE_KEY = 'triage-wizard-canned-responses';
+
 /** In-memory response library */
 let responseLibrary = [];
+
+/** Known metadata keys (case-insensitive) */
+const METADATA_KEYS = ['id', 'title', 'categories', 'description'];
+
+/**
+ * Convert text to a URL-friendly slug.
+ * @param {string} text - Text to slugify
+ * @returns {string} Slugified text
+ */
+export function slugify(text) {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')  // Replace non-alphanumeric with hyphens
+    .replace(/-+/g, '-')          // Collapse multiple hyphens
+    .replace(/^-|-$/g, '');       // Trim leading/trailing hyphens
+}
 
 /**
  * Parse canned responses from Markdown text.
@@ -36,9 +56,93 @@ let responseLibrary = [];
  * @returns {CannedResponse[]} Array of parsed responses
  */
 export function parseCannedResponsesMarkdown(markdown) {
-  // TODO: Parse ## headings, extract metadata and body
-  console.log('[cannedResponses] Parsing markdown:', markdown?.length, 'chars');
-  return [];
+  if (!markdown) return [];
+
+  const responses = [];
+  const usedIds = new Set();
+
+  // Split by level-2 headings, keeping the heading text
+  const sections = markdown.split(/^## /m);
+
+  for (let i = 1; i < sections.length; i++) {
+    const section = sections[i];
+    const lines = section.split('\n');
+
+    // First line is the heading text
+    const heading = lines[0].trim();
+    if (!heading) continue;
+
+    // Parse metadata and body
+    const metadata = {};
+    let bodyStartIndex = 1;
+
+    for (let j = 1; j < lines.length; j++) {
+      const line = lines[j];
+      // Check for metadata line (Key: value)
+      const metaMatch = line.match(/^([A-Za-z]+):\s*(.*)/);
+      if (metaMatch) {
+        const key = metaMatch[1].toLowerCase();
+        if (METADATA_KEYS.includes(key)) {
+          metadata[key] = metaMatch[2].trim();
+        }
+        // Both known and unknown metadata keys are consumed
+        bodyStartIndex = j + 1;
+      } else if (line.trim() === '') {
+        // Empty line - continue looking (metadata might have gaps)
+        bodyStartIndex = j + 1;
+      } else {
+        // Non-metadata, non-empty line - body starts here
+        break;
+      }
+    }
+
+    // Extract body (everything after metadata)
+    const bodyLines = lines.slice(bodyStartIndex);
+    const body = bodyLines.join('\n').trim();
+
+    // Generate ID from explicit ID or heading
+    let id = metadata.id || slugify(heading);
+
+    // Handle duplicate IDs
+    if (usedIds.has(id)) {
+      let counter = 2;
+      while (usedIds.has(`${id}-${counter}`)) {
+        counter++;
+      }
+      id = `${id}-${counter}`;
+    }
+    usedIds.add(id);
+
+    // Build response object
+    const response = {
+      id,
+      title: metadata.title || heading,
+      bodyTemplate: body,
+    };
+
+    // Add optional fields
+    if (metadata.description) {
+      response.description = metadata.description;
+    }
+
+    // Parse categories
+    if (metadata.categories !== undefined) {
+      if (metadata.categories.trim() === '') {
+        response.categories = [];
+      } else {
+        response.categories = metadata.categories
+          .split(',')
+          .map((c) => c.trim())
+          .filter((c) => c);
+      }
+    } else {
+      response.categories = [];
+    }
+
+    responses.push(response);
+  }
+
+  return responses;
 }
 
 /**
@@ -59,8 +163,41 @@ export async function loadDefaults() {
  * @returns {CannedResponse[]} Updated response library
  */
 export function importMarkdown(markdown, options = { replace: false }) {
-  // TODO: Parse and merge/replace
-  console.log('[cannedResponses] Importing markdown, replace:', options.replace);
+  const parsed = parseCannedResponsesMarkdown(markdown);
+
+  if (options.replace) {
+    responseLibrary = parsed;
+  } else {
+    // Merge: update existing by ID, add new ones
+    for (const newResponse of parsed) {
+      const existingIndex = responseLibrary.findIndex((r) => r.id === newResponse.id);
+      if (existingIndex >= 0) {
+        responseLibrary[existingIndex] = newResponse;
+      } else {
+        responseLibrary.push(newResponse);
+      }
+    }
+  }
+
+  persist();
+  return responseLibrary;
+}
+
+/**
+ * Persist the response library to localStorage.
+ */
+function persist() {
+  storage.set(STORAGE_KEY, responseLibrary);
+}
+
+/**
+ * Load responses from localStorage.
+ */
+export function loadFromStorage() {
+  const stored = storage.get(STORAGE_KEY);
+  if (stored && Array.isArray(stored)) {
+    responseLibrary = stored;
+  }
   return responseLibrary;
 }
 
@@ -96,8 +233,19 @@ export function getByCategory(category) {
  * @returns {CannedResponse[]} Updated library
  */
 export function saveResponse(response) {
-  // TODO: Add/update in library and persist
-  console.log('[cannedResponses] Saving response:', response?.id);
+  if (!response || !response.id) {
+    console.warn('[cannedResponses] Cannot save response without ID');
+    return responseLibrary;
+  }
+
+  const existingIndex = responseLibrary.findIndex((r) => r.id === response.id);
+  if (existingIndex >= 0) {
+    responseLibrary[existingIndex] = { ...responseLibrary[existingIndex], ...response };
+  } else {
+    responseLibrary.push(response);
+  }
+
+  persist();
   return responseLibrary;
 }
 
@@ -107,8 +255,12 @@ export function saveResponse(response) {
  * @returns {boolean} True if deleted
  */
 export function deleteResponse(id) {
-  // TODO: Remove from library and persist
-  console.log('[cannedResponses] Deleting response:', id);
+  const existingIndex = responseLibrary.findIndex((r) => r.id === id);
+  if (existingIndex >= 0) {
+    responseLibrary.splice(existingIndex, 1);
+    persist();
+    return true;
+  }
   return false;
 }
 

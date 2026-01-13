@@ -145,6 +145,67 @@ export function clearAllConfig() {
 }
 
 /**
+ * Get a value from localStorage (without prefix).
+ * Use for data storage rather than configuration.
+ * @param {string} key - Storage key
+ * @param {*} defaultValue - Default value if key not found
+ * @returns {*} The stored value or defaultValue
+ */
+export function get(key, defaultValue = null) {
+  if (!isStorageAvailable()) {
+    return defaultValue;
+  }
+
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) {
+      return defaultValue;
+    }
+    return JSON.parse(stored);
+  } catch {
+    return defaultValue;
+  }
+}
+
+/**
+ * Set a value in localStorage (without prefix).
+ * Use for data storage rather than configuration.
+ * @param {string} key - Storage key
+ * @param {*} value - Value to store (will be JSON serialized)
+ * @returns {boolean} True if successful, false otherwise
+ */
+export function set(key, value) {
+  if (!isStorageAvailable()) {
+    return false;
+  }
+
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove a value from localStorage (without prefix).
+ * @param {string} key - Storage key
+ * @returns {boolean} True if successful, false otherwise
+ */
+export function remove(key) {
+  if (!isStorageAvailable()) {
+    return false;
+  }
+
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Sync configuration to server (future feature).
  * @param {Object} data - Data to sync
  * @param {string} authToken - Authentication token
