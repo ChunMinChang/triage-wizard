@@ -25,6 +25,7 @@ vi.mock('../ui.js', () => ({
   showInfo: vi.fn(),
   clearBugTable: vi.fn(),
   updateFilterControls: vi.fn(),
+  updateBugCount: vi.fn(),
 }));
 
 vi.mock('../config.js', () => ({
@@ -34,6 +35,19 @@ vi.mock('../config.js', () => ({
     aiProvider: 'none',
   })),
 }));
+
+vi.mock('../filters.js', async () => {
+  const actual = await vi.importActual('../filters.js');
+  return {
+    ...actual,
+    filterByTagDifference: vi.fn((bugs, include, exclude) => {
+      // Use actual implementation for testing
+      return actual.filterByTagDifference(bugs, include, exclude);
+    }),
+    getPreset: vi.fn((id) => actual.getPreset(id)),
+    applyPreset: vi.fn((bugs, presetId) => actual.applyPreset(bugs, presetId)),
+  };
+});
 
 // Import app after mocking dependencies
 import {
@@ -45,6 +59,9 @@ import {
   clearBugs,
   handleLoadClick,
   setupEventListeners,
+  applyFilter,
+  clearFilter,
+  handlePresetChange,
 } from '../app.js';
 
 describe('app module', () => {
@@ -69,6 +86,10 @@ describe('app module', () => {
       <tbody id="bug-table-body"></tbody>
       <div id="include-tags"></div>
       <div id="exclude-tags"></div>
+      <select id="filter-preset">
+        <option value="">-- Preset filters --</option>
+        <option value="fuzzing-testcase">Fuzzing testcase</option>
+      </select>
     `;
 
     // Reset bugzilla mock implementations
@@ -489,6 +510,100 @@ describe('app module', () => {
       expect(ui.renderBugTable).toHaveBeenCalledWith(mockBugs, expect.any(Object));
       expect(ui.setLoading).toHaveBeenCalledWith(false);
       expect(getLoadedBugs()).toEqual(mockBugs);
+    });
+  });
+
+  describe('filtering', () => {
+    const mockBugsWithTags = [
+      {
+        id: 1,
+        summary: 'Bug with Has STR',
+        tags: [{ id: 'has-str', label: 'Has STR' }],
+      },
+      {
+        id: 2,
+        summary: 'Bug with test-attached',
+        tags: [{ id: 'test-attached', label: 'test-attached' }],
+      },
+      {
+        id: 3,
+        summary: 'Bug with fuzzy-test-attached',
+        tags: [{ id: 'fuzzy-test-attached', label: 'fuzzy-test-attached' }],
+      },
+    ];
+
+    beforeEach(() => {
+      // Load bugs first
+      bugzilla.parseInputString.mockReturnValue({ type: 'ids', ids: ['1', '2', '3'] });
+      bugzilla.loadBugsByIds.mockResolvedValue(mockBugsWithTags);
+    });
+
+    it('should filter bugs by include tags', async () => {
+      await loadBugs('1 2 3');
+
+      // Apply filter with include tags
+      applyFilter({ include: ['has-str'], exclude: [] });
+
+      expect(ui.renderBugTable).toHaveBeenCalled();
+      const lastCall = ui.renderBugTable.mock.calls[ui.renderBugTable.mock.calls.length - 1];
+      const filteredBugs = lastCall[0];
+      expect(filteredBugs.length).toBe(1);
+      expect(filteredBugs[0].id).toBe(1);
+    });
+
+    it('should filter bugs by exclude tags', async () => {
+      await loadBugs('1 2 3');
+
+      // Apply filter with exclude tags
+      applyFilter({ include: [], exclude: ['has-str'] });
+
+      const lastCall = ui.renderBugTable.mock.calls[ui.renderBugTable.mock.calls.length - 1];
+      const filteredBugs = lastCall[0];
+      expect(filteredBugs.length).toBe(2);
+      expect(filteredBugs.map((b) => b.id)).toEqual([2, 3]);
+    });
+
+    it('should clear filter and show all bugs', async () => {
+      await loadBugs('1 2 3');
+
+      // Apply filter first
+      applyFilter({ include: ['has-str'], exclude: [] });
+
+      // Now clear
+      clearFilter();
+
+      const lastCall = ui.renderBugTable.mock.calls[ui.renderBugTable.mock.calls.length - 1];
+      const bugs = lastCall[0];
+      expect(bugs.length).toBe(3);
+    });
+
+    it('should apply preset filter', async () => {
+      await loadBugs('1 2 3');
+
+      // Select preset
+      const presetSelect = document.getElementById('filter-preset');
+      presetSelect.value = 'fuzzing-testcase';
+
+      handlePresetChange();
+
+      const lastCall = ui.renderBugTable.mock.calls[ui.renderBugTable.mock.calls.length - 1];
+      const filteredBugs = lastCall[0];
+      expect(filteredBugs.length).toBe(1);
+      expect(filteredBugs[0].id).toBe(3);
+    });
+
+    it('should update bug count when filtered', async () => {
+      await loadBugs('1 2 3');
+
+      // Apply filter with test-attached
+      applyFilter({ include: ['test-attached'], exclude: [] });
+
+      // Should show filtered count
+      expect(ui.updateBugCount).toHaveBeenCalled();
+      // Get the last call to updateBugCount
+      const calls = ui.updateBugCount.mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe(1); // Only bug 2 has test-attached
     });
   });
 });

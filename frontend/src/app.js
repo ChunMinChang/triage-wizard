@@ -12,9 +12,13 @@
 import * as bugzilla from './bugzilla.js';
 import * as ui from './ui.js';
 import * as config from './config.js';
+import * as filters from './filters.js';
 
 /** @type {Object[]} Currently loaded bugs */
 let loadedBugs = [];
+
+/** @type {Object} Current filter state */
+let currentFilter = { include: [], exclude: [] };
 
 /** DOM element IDs used by this module */
 const DOM_IDS = {
@@ -23,6 +27,9 @@ const DOM_IDS = {
   PROCESS_ALL_BTN: 'process-all-btn',
   APPLY_FILTER_BTN: 'apply-filter-btn',
   CLEAR_FILTER_BTN: 'clear-filter-btn',
+  FILTER_PRESET: 'filter-preset',
+  INCLUDE_TAGS: 'include-tags',
+  EXCLUDE_TAGS: 'exclude-tags',
   EXPORT_JSON_BTN: 'export-json-btn',
   EXPORT_CSV_BTN: 'export-csv-btn',
   EXPORT_MD_BTN: 'export-md-btn',
@@ -72,6 +79,12 @@ export function setupEventListeners() {
   const clearFilterBtn = getElement(DOM_IDS.CLEAR_FILTER_BTN);
   if (clearFilterBtn) {
     clearFilterBtn.addEventListener('click', handleClearFilter);
+  }
+
+  // Filter preset dropdown
+  const filterPreset = getElement(DOM_IDS.FILTER_PRESET);
+  if (filterPreset) {
+    filterPreset.addEventListener('change', handlePresetChange);
   }
 
   // Export buttons
@@ -304,16 +317,150 @@ async function handleProcessAllClick() {
  * Handle apply filter button click.
  */
 function handleApplyFilter() {
-  // TODO: Implement filtering (L2-F3, L2-F4)
-  console.log('[app] Apply filter clicked');
+  // Read from checkboxes when user clicks the button
+  currentFilter = getSelectedTags();
+  applyFilter();
 }
 
 /**
  * Handle clear filter button click.
  */
 function handleClearFilter() {
-  // TODO: Implement filter clearing (L2-F4)
-  console.log('[app] Clear filter clicked');
+  clearFilter();
+}
+
+/**
+ * Handle preset dropdown change.
+ */
+export function handlePresetChange() {
+  const presetSelect = getElement(DOM_IDS.FILTER_PRESET);
+  if (!presetSelect) return;
+
+  const presetId = presetSelect.value;
+  if (!presetId) {
+    // Empty selection - don't change anything
+    return;
+  }
+
+  const preset = filters.getPreset(presetId);
+  if (!preset) {
+    console.warn('[app] Unknown preset:', presetId);
+    return;
+  }
+
+  // Update current filter with preset values
+  currentFilter = {
+    include: [...preset.include],
+    exclude: [...preset.exclude],
+  };
+
+  // Update UI checkboxes to match preset
+  updateFilterCheckboxes();
+
+  // Apply the filter
+  applyFilter();
+}
+
+/**
+ * Update filter checkboxes to match current filter state.
+ */
+function updateFilterCheckboxes() {
+  const includeContainer = getElement(DOM_IDS.INCLUDE_TAGS);
+  const excludeContainer = getElement(DOM_IDS.EXCLUDE_TAGS);
+
+  if (includeContainer) {
+    const checkboxes = includeContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((cb) => {
+      cb.checked = currentFilter.include.includes(cb.value);
+    });
+  }
+
+  if (excludeContainer) {
+    const checkboxes = excludeContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((cb) => {
+      cb.checked = currentFilter.exclude.includes(cb.value);
+    });
+  }
+}
+
+/**
+ * Get selected tags from checkbox containers.
+ * @returns {Object} Object with include and exclude arrays
+ */
+function getSelectedTags() {
+  const include = [];
+  const exclude = [];
+
+  const includeContainer = getElement(DOM_IDS.INCLUDE_TAGS);
+  if (includeContainer) {
+    const checked = includeContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checked.forEach((cb) => include.push(cb.value));
+  }
+
+  const excludeContainer = getElement(DOM_IDS.EXCLUDE_TAGS);
+  if (excludeContainer) {
+    const checked = excludeContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checked.forEach((cb) => exclude.push(cb.value));
+  }
+
+  return { include, exclude };
+}
+
+/**
+ * Apply filter to loaded bugs and render.
+ * @param {Object} [filter] - Optional filter to apply. If not provided, uses currentFilter state.
+ * @param {string[]} [filter.include] - Tags to include
+ * @param {string[]} [filter.exclude] - Tags to exclude
+ */
+export function applyFilter(filter = null) {
+  // Use provided filter or current state
+  if (filter) {
+    currentFilter = filter;
+  }
+
+  // Filter bugs
+  const filteredBugs = filters.filterByTagDifference(
+    loadedBugs,
+    currentFilter.include,
+    currentFilter.exclude
+  );
+
+  // Render filtered results
+  const cfg = config.getConfig();
+  ui.renderBugTable(filteredBugs, { bugzillaHost: cfg.bugzillaHost });
+
+  // Update bug count
+  ui.updateBugCount(filteredBugs.length);
+
+  // Update filter controls UI
+  ui.updateFilterControls(collectAvailableTags(loadedBugs), currentFilter);
+}
+
+/**
+ * Clear filter and show all bugs.
+ */
+export function clearFilter() {
+  // Reset filter state
+  currentFilter = { include: [], exclude: [] };
+
+  // Reset preset dropdown
+  const presetSelect = getElement(DOM_IDS.FILTER_PRESET);
+  if (presetSelect) {
+    presetSelect.value = '';
+  }
+
+  // Uncheck all checkboxes
+  updateFilterCheckboxes();
+
+  // Render all bugs
+  const cfg = config.getConfig();
+  ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+  // Update bug count
+  ui.updateBugCount(loadedBugs.length);
+
+  // Update filter controls UI
+  ui.updateFilterControls(collectAvailableTags(loadedBugs), currentFilter);
 }
 
 /**

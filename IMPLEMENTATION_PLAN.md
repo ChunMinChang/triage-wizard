@@ -75,11 +75,11 @@ When working on any task in this plan, follow this TDD workflow:
 - [x] L1-F3: Basic UI Rendering ✓
 - [x] L1-F4: App Orchestration ★ ✓
 
-### Layer 2: Tagging & Filtering (in progress)
+### Layer 2: Tagging & Filtering (complete)
 - [x] L2-F1: Heuristic Tagging ★ (CORE LOGIC) ✓
 - [x] L2-F2: Tag Display ✓
 - [x] L2-F3: Filter Engine ✓
-- [ ] L2-F4: Filter UI
+- [x] L2-F4: Filter UI ✓
 
 ---
 
