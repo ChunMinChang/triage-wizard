@@ -34,6 +34,18 @@ export const DOM_IDS = {
   RESPONSE_BODY: 'response-body',
   COPY_RESPONSE_BTN: 'copy-response-btn',
   POST_RESPONSE_BTN: 'post-response-btn',
+  // Canned response editor
+  CANNED_EDITOR_MODAL: 'canned-editor-modal',
+  CANNED_EDITOR_TITLE: 'canned-editor-title',
+  CANNED_EDITOR_FORM: 'canned-editor-form',
+  CANNED_EDITOR_ID: 'canned-editor-id',
+  CANNED_EDITOR_TITLE_INPUT: 'canned-editor-title-input',
+  CANNED_EDITOR_CATEGORIES: 'canned-editor-categories',
+  CANNED_EDITOR_DESCRIPTION: 'canned-editor-description',
+  CANNED_EDITOR_BODY: 'canned-editor-body',
+  CLOSE_CANNED_EDITOR_BTN: 'close-canned-editor-btn',
+  CANCEL_CANNED_EDITOR_BTN: 'cancel-canned-editor-btn',
+  SAVE_CANNED_EDITOR_BTN: 'save-canned-editor-btn',
 };
 
 /** Default Bugzilla host for bug links */
@@ -860,6 +872,13 @@ export function renderCannedResponseCard(response) {
   const actions = document.createElement('div');
   actions.className = 'canned-response-actions';
 
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn-small';
+  editBtn.textContent = 'Edit';
+  editBtn.dataset.action = 'edit';
+  editBtn.dataset.responseId = response.id;
+  actions.appendChild(editBtn);
+
   const copyBtn = document.createElement('button');
   copyBtn.className = 'btn-small';
   copyBtn.textContent = 'Copy';
@@ -868,11 +887,10 @@ export function renderCannedResponseCard(response) {
   actions.appendChild(copyBtn);
 
   const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'btn-small';
+  deleteBtn.className = 'btn-small btn-danger';
   deleteBtn.textContent = 'Delete';
   deleteBtn.dataset.action = 'delete';
   deleteBtn.dataset.responseId = response.id;
-  deleteBtn.style.background = '#dc3545';
   actions.appendChild(deleteBtn);
 
   header.appendChild(actions);
@@ -958,6 +976,116 @@ export function extractCategories(responses) {
   });
 
   return Array.from(categories).sort();
+}
+
+// =====================================
+// Canned Response Editor Functions
+// =====================================
+
+/**
+ * Open the canned response editor modal.
+ * @param {Object|null} response - Response to edit, or null for new response
+ */
+export function openCannedEditor(response = null) {
+  const modal = getElement(DOM_IDS.CANNED_EDITOR_MODAL);
+  const title = getElement(DOM_IDS.CANNED_EDITOR_TITLE);
+  const form = getElement(DOM_IDS.CANNED_EDITOR_FORM);
+  const idInput = getElement(DOM_IDS.CANNED_EDITOR_ID);
+  const titleInput = getElement(DOM_IDS.CANNED_EDITOR_TITLE_INPUT);
+  const categoriesInput = getElement(DOM_IDS.CANNED_EDITOR_CATEGORIES);
+  const descriptionInput = getElement(DOM_IDS.CANNED_EDITOR_DESCRIPTION);
+  const bodyInput = getElement(DOM_IDS.CANNED_EDITOR_BODY);
+
+  if (!modal || !form) return;
+
+  // Reset form
+  form.reset();
+
+  if (response) {
+    // Edit mode
+    title.textContent = 'Edit Canned Response';
+    modal.dataset.editId = response.id;
+    idInput.value = response.id || '';
+    idInput.readOnly = true; // Don't allow changing ID of existing response
+    titleInput.value = response.title || '';
+    categoriesInput.value = response.categories?.join(', ') || '';
+    descriptionInput.value = response.description || '';
+    bodyInput.value = response.bodyTemplate || '';
+  } else {
+    // New mode
+    title.textContent = 'New Canned Response';
+    delete modal.dataset.editId;
+    idInput.readOnly = false;
+  }
+
+  modal.hidden = false;
+  titleInput.focus();
+}
+
+/**
+ * Close the canned response editor modal.
+ */
+export function closeCannedEditor() {
+  const modal = getElement(DOM_IDS.CANNED_EDITOR_MODAL);
+  if (modal) {
+    modal.hidden = true;
+    delete modal.dataset.editId;
+  }
+}
+
+/**
+ * Get the form data from the canned response editor.
+ * @returns {Object} Form data
+ */
+export function getCannedEditorFormData() {
+  const modal = getElement(DOM_IDS.CANNED_EDITOR_MODAL);
+  const idInput = getElement(DOM_IDS.CANNED_EDITOR_ID);
+  const titleInput = getElement(DOM_IDS.CANNED_EDITOR_TITLE_INPUT);
+  const categoriesInput = getElement(DOM_IDS.CANNED_EDITOR_CATEGORIES);
+  const descriptionInput = getElement(DOM_IDS.CANNED_EDITOR_DESCRIPTION);
+  const bodyInput = getElement(DOM_IDS.CANNED_EDITOR_BODY);
+
+  const categoriesRaw = categoriesInput?.value || '';
+  const categories = categoriesRaw
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c);
+
+  return {
+    id: idInput?.value?.trim() || '',
+    title: titleInput?.value?.trim() || '',
+    categories,
+    description: descriptionInput?.value?.trim() || '',
+    bodyTemplate: bodyInput?.value || '',
+    isEditing: !!modal?.dataset.editId,
+    originalId: modal?.dataset.editId || null,
+  };
+}
+
+/**
+ * Validate the canned editor form.
+ * @returns {Object} { valid: boolean, errors: string[] }
+ */
+export function validateCannedEditorForm() {
+  const data = getCannedEditorFormData();
+  const errors = [];
+
+  if (!data.title) {
+    errors.push('Title is required');
+  }
+
+  if (!data.bodyTemplate) {
+    errors.push('Response body is required');
+  }
+
+  if (data.id && !/^[a-z0-9-]+$/.test(data.id)) {
+    errors.push('ID must contain only lowercase letters, numbers, and hyphens');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }
 
 console.log('[ui] Module loaded');

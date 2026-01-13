@@ -131,6 +131,10 @@
             Replace existing (uncheck to merge)
           </label>
         </div>
+        <div class="canned-actions">
+          <button id="new-response-btn" type="button" class="btn-primary">+ New Response</button>
+          <button id="export-canned-md-btn" type="button">Export Markdown</button>
+        </div>
         <div class="canned-filter">
           <label for="canned-category-filter">Filter by category:</label>
           <select id="canned-category-filter">
@@ -231,6 +235,45 @@
         <button id="undo-response-btn" type="button" class="btn-secondary" disabled title="No history available">Undo</button>
         <button id="copy-response-btn" type="button">Copy to Clipboard</button>
         <button id="post-response-btn" type="button" class="btn-primary">Post to Bugzilla</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Canned Response Editor Modal -->
+  <div id="canned-editor-modal" class="modal" hidden>
+    <div class="modal-content canned-editor-content">
+      <header class="modal-header">
+        <h2 id="canned-editor-title">New Canned Response</h2>
+        <button id="close-canned-editor-btn" class="close-btn" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <form id="canned-editor-form" class="canned-editor-form">
+          <div class="form-group">
+            <label for="canned-editor-id">ID (unique, lowercase, no spaces)</label>
+            <input type="text" id="canned-editor-id" required pattern="[a-z0-9-]+" placeholder="e.g., need-str" />
+            <span class="form-hint">Used to identify this response. Auto-generated from title if left empty.</span>
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-title-input">Title</label>
+            <input type="text" id="canned-editor-title-input" required placeholder="e.g., Request Steps to Reproduce" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-categories">Categories (comma-separated)</label>
+            <input type="text" id="canned-editor-categories" placeholder="e.g., triage, needs-info" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-description">Description (internal note for triagers)</label>
+            <input type="text" id="canned-editor-description" placeholder="e.g., Use when bug lacks reproduction steps" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-body">Response Body (Markdown)</label>
+            <textarea id="canned-editor-body" rows="10" required placeholder="Write your canned response here..."></textarea>
+          </div>
+        </form>
+      </div>
+      <footer class="modal-footer">
+        <button id="cancel-canned-editor-btn" type="button">Cancel</button>
+        <button id="save-canned-editor-btn" type="button" class="btn-primary">Save Response</button>
       </footer>
     </div>
   </div>

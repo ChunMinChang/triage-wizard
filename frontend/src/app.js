@@ -65,6 +65,13 @@ const DOM_IDS = {
   REFINE_CHIPS: 'refine-chips',
   UNDO_RESPONSE_BTN: 'undo-response-btn',
   HISTORY_INDICATOR: 'history-indicator',
+  // Canned response editor
+  NEW_RESPONSE_BTN: 'new-response-btn',
+  EXPORT_CANNED_MD_BTN: 'export-canned-md-btn',
+  CANNED_EDITOR_MODAL: 'canned-editor-modal',
+  CLOSE_CANNED_EDITOR_BTN: 'close-canned-editor-btn',
+  CANCEL_CANNED_EDITOR_BTN: 'cancel-canned-editor-btn',
+  SAVE_CANNED_EDITOR_BTN: 'save-canned-editor-btn',
 };
 
 /**
@@ -171,6 +178,42 @@ export function setupEventListeners() {
   const cannedList = getElement(DOM_IDS.CANNED_RESPONSES_LIST);
   if (cannedList) {
     cannedList.addEventListener('click', handleCannedResponseAction);
+  }
+
+  // Canned response editor
+  const newResponseBtn = getElement(DOM_IDS.NEW_RESPONSE_BTN);
+  if (newResponseBtn) {
+    newResponseBtn.addEventListener('click', handleNewResponse);
+  }
+
+  const exportCannedMdBtn = getElement(DOM_IDS.EXPORT_CANNED_MD_BTN);
+  if (exportCannedMdBtn) {
+    exportCannedMdBtn.addEventListener('click', handleExportCannedMd);
+  }
+
+  const closeCannedEditorBtn = getElement(DOM_IDS.CLOSE_CANNED_EDITOR_BTN);
+  if (closeCannedEditorBtn) {
+    closeCannedEditorBtn.addEventListener('click', handleCloseCannedEditor);
+  }
+
+  const cancelCannedEditorBtn = getElement(DOM_IDS.CANCEL_CANNED_EDITOR_BTN);
+  if (cancelCannedEditorBtn) {
+    cancelCannedEditorBtn.addEventListener('click', handleCloseCannedEditor);
+  }
+
+  const saveCannedEditorBtn = getElement(DOM_IDS.SAVE_CANNED_EDITOR_BTN);
+  if (saveCannedEditorBtn) {
+    saveCannedEditorBtn.addEventListener('click', handleSaveCannedResponse);
+  }
+
+  // Close canned editor on backdrop click
+  const cannedEditorModal = getElement(DOM_IDS.CANNED_EDITOR_MODAL);
+  if (cannedEditorModal) {
+    cannedEditorModal.addEventListener('click', (e) => {
+      if (e.target === cannedEditorModal) {
+        handleCloseCannedEditor();
+      }
+    });
   }
 
   // Response composer modal events
@@ -1713,7 +1756,7 @@ export function handleCannedCategoryFilter(event) {
 }
 
 /**
- * Handle actions on canned response cards (copy, delete).
+ * Handle actions on canned response cards (edit, copy, delete).
  * @param {Event} event - Click event
  */
 export async function handleCannedResponseAction(event) {
@@ -1725,7 +1768,12 @@ export async function handleCannedResponseAction(event) {
 
   if (!responseId) return;
 
-  if (action === 'copy') {
+  if (action === 'edit') {
+    const response = cannedResponses.getById(responseId);
+    if (response) {
+      ui.openCannedEditor(response);
+    }
+  } else if (action === 'copy') {
     const response = cannedResponses.getById(responseId);
     if (response) {
       try {
@@ -1742,6 +1790,101 @@ export async function handleCannedResponseAction(event) {
       refreshCannedResponsesUI();
     }
   }
+}
+
+/**
+ * Handle new response button click.
+ * Opens the canned response editor for creating a new response.
+ */
+export function handleNewResponse() {
+  ui.openCannedEditor(null);
+}
+
+/**
+ * Handle close canned editor button click.
+ */
+export function handleCloseCannedEditor() {
+  ui.closeCannedEditor();
+}
+
+/**
+ * Handle save canned response button click.
+ * Validates and saves the response from the editor form.
+ */
+export function handleSaveCannedResponse() {
+  const validation = ui.validateCannedEditorForm();
+  if (!validation.valid) {
+    ui.showError(validation.errors.join('. '));
+    return;
+  }
+
+  const formData = ui.getCannedEditorFormData();
+
+  // Generate ID from title if not provided
+  let responseId = formData.id;
+  if (!responseId) {
+    responseId = cannedResponses.slugify(formData.title);
+  }
+
+  // Check for duplicate ID when creating new
+  if (!formData.isEditing) {
+    const existing = cannedResponses.getById(responseId);
+    if (existing) {
+      ui.showError(`A response with ID "${responseId}" already exists`);
+      return;
+    }
+  }
+
+  // Build the response object
+  const response = {
+    id: responseId,
+    title: formData.title,
+    bodyTemplate: formData.bodyTemplate,
+    categories: formData.categories,
+  };
+
+  if (formData.description) {
+    response.description = formData.description;
+  }
+
+  // Save the response
+  cannedResponses.saveResponse(response);
+  ui.closeCannedEditor();
+  refreshCannedResponsesUI();
+  ui.showSuccess(formData.isEditing ? 'Response updated' : 'Response created');
+}
+
+/**
+ * Export canned responses to Markdown format.
+ */
+export function handleExportCannedMd() {
+  const responses = cannedResponses.getAll();
+  if (responses.length === 0) {
+    ui.showInfo('No canned responses to export');
+    return;
+  }
+
+  // Build Markdown
+  const lines = ['# Canned Responses', ''];
+
+  responses.forEach((response) => {
+    lines.push(`## ${response.title}`);
+    lines.push(`ID: ${response.id}`);
+    if (response.categories && response.categories.length > 0) {
+      lines.push(`Categories: ${response.categories.join(', ')}`);
+    }
+    if (response.description) {
+      lines.push(`Description: ${response.description}`);
+    }
+    lines.push('');
+    lines.push(response.bodyTemplate);
+    lines.push('');
+  });
+
+  const markdown = lines.join('\n');
+  const filename = exports.generateFilename('canned-responses', 'md');
+  exports.downloadFile(markdown, filename, 'text/markdown');
+  ui.showSuccess('Exported canned responses');
 }
 
 // Auto-initialize when DOM is ready
