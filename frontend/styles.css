@@ -358,6 +358,123 @@ button:disabled {
   color: #333;
 }
 
+/* === Canned Responses Section === */
+.canned-responses-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  align-items: flex-end;
+}
+
+.canned-import {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.import-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.import-options input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.canned-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.canned-filter label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.canned-filter select {
+  width: auto;
+  margin: 0;
+}
+
+.canned-responses-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.canned-response-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  background: #fafafa;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.canned-response-card:hover {
+  border-color: #0066cc;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.canned-response-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.canned-response-title {
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.canned-response-id {
+  font-size: 0.75rem;
+  color: #666;
+  font-family: monospace;
+}
+
+.canned-response-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.category-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  background: #e8e8e8;
+  color: #555;
+  border-radius: 3px;
+  font-size: 0.7rem;
+}
+
+.canned-response-description {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
+}
+
+.canned-response-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.canned-response-actions button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
 /* === Export Section === */
 .export-buttons {
   display: flex;

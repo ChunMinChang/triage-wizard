@@ -23,6 +23,10 @@ export const DOM_IDS = {
   BUG_COUNT: 'bug-count',
   INCLUDE_TAGS: 'include-tags',
   EXCLUDE_TAGS: 'exclude-tags',
+  CANNED_RESPONSES_LIST: 'canned-responses-list',
+  CANNED_CATEGORY_FILTER: 'canned-category-filter',
+  IMPORT_CANNED_MD: 'import-canned-md',
+  IMPORT_REPLACE: 'import-replace',
 };
 
 /** Default Bugzilla host for bug links */
@@ -487,8 +491,152 @@ function escapeHtml(str) {
  * @param {Object[]} cannedResponses - Available canned responses
  */
 export function openResponseComposer(bug, cannedResponses) {
-  // TODO: Implement in L4 (canned responses)
+  // TODO: Implement in L4-F3 (per-bug canned responses UI)
   console.log('[ui] Opening response composer for:', bug?.id);
+}
+
+/**
+ * Render a single canned response card.
+ * @param {Object} response - Canned response object
+ * @returns {HTMLElement} Card element
+ */
+export function renderCannedResponseCard(response) {
+  const card = document.createElement('div');
+  card.className = 'canned-response-card';
+  card.dataset.responseId = response.id;
+
+  // Header with title, ID, and actions
+  const header = document.createElement('div');
+  header.className = 'canned-response-header';
+
+  const titleSection = document.createElement('div');
+  const title = document.createElement('h3');
+  title.className = 'canned-response-title';
+  title.textContent = response.title || response.id;
+  titleSection.appendChild(title);
+
+  const idSpan = document.createElement('span');
+  idSpan.className = 'canned-response-id';
+  idSpan.textContent = response.id;
+  titleSection.appendChild(idSpan);
+
+  // Categories
+  if (response.categories && response.categories.length > 0) {
+    const categoriesDiv = document.createElement('div');
+    categoriesDiv.className = 'canned-response-categories';
+    response.categories.forEach((cat) => {
+      const badge = document.createElement('span');
+      badge.className = 'category-badge';
+      badge.textContent = cat;
+      categoriesDiv.appendChild(badge);
+    });
+    titleSection.appendChild(categoriesDiv);
+  }
+
+  header.appendChild(titleSection);
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'canned-response-actions';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'btn-small';
+  copyBtn.textContent = 'Copy';
+  copyBtn.dataset.action = 'copy';
+  copyBtn.dataset.responseId = response.id;
+  actions.appendChild(copyBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn-small';
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.dataset.action = 'delete';
+  deleteBtn.dataset.responseId = response.id;
+  deleteBtn.style.background = '#dc3545';
+  actions.appendChild(deleteBtn);
+
+  header.appendChild(actions);
+  card.appendChild(header);
+
+  // Description
+  if (response.description) {
+    const desc = document.createElement('p');
+    desc.className = 'canned-response-description';
+    desc.textContent = response.description;
+    card.appendChild(desc);
+  }
+
+  return card;
+}
+
+/**
+ * Render the canned responses list.
+ * @param {Object[]} responses - Array of canned response objects
+ */
+export function renderCannedResponsesList(responses) {
+  const container = getElement(DOM_IDS.CANNED_RESPONSES_LIST);
+  if (!container) {
+    console.warn('[ui] Canned responses list container not found');
+    return;
+  }
+
+  container.innerHTML = '';
+
+  if (!responses || responses.length === 0) {
+    const emptyState = document.createElement('p');
+    emptyState.className = 'empty-state';
+    emptyState.textContent = 'No canned responses loaded. Import a Markdown file or wait for defaults to load.';
+    container.appendChild(emptyState);
+    return;
+  }
+
+  responses.forEach((response) => {
+    const card = renderCannedResponseCard(response);
+    container.appendChild(card);
+  });
+}
+
+/**
+ * Update the category filter dropdown.
+ * @param {string[]} categories - Unique category list
+ * @param {string} selectedCategory - Currently selected category
+ */
+export function updateCannedCategoryFilter(categories, selectedCategory = '') {
+  const select = getElement(DOM_IDS.CANNED_CATEGORY_FILTER);
+  if (!select) return;
+
+  // Keep the first "All categories" option
+  const firstOption = select.options[0];
+  select.innerHTML = '';
+  select.appendChild(firstOption);
+
+  // Add category options
+  categories.forEach((cat) => {
+    const option = document.createElement('option');
+    option.value = cat;
+    option.textContent = cat;
+    if (cat === selectedCategory) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+}
+
+/**
+ * Get all unique categories from responses.
+ * @param {Object[]} responses - Array of canned response objects
+ * @returns {string[]} Unique sorted categories
+ */
+export function extractCategories(responses) {
+  if (!responses || !Array.isArray(responses)) return [];
+
+  const categories = new Set();
+  responses.forEach((r) => {
+    if (r.categories && Array.isArray(r.categories)) {
+      r.categories.forEach((cat) => categories.add(cat));
+    }
+  });
+
+  return Array.from(categories).sort();
 }
 
 console.log('[ui] Module loaded');

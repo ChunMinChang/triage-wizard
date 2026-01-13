@@ -117,6 +117,33 @@
       </div>
     </section>
 
+    <!-- Canned Responses Section -->
+    <section id="canned-responses">
+      <h2>Canned Responses</h2>
+      <div class="canned-responses-controls">
+        <div class="canned-import">
+          <label class="import-label">
+            Import Markdown:
+            <input type="file" id="import-canned-md" accept=".md" />
+          </label>
+          <label class="import-options">
+            <input type="checkbox" id="import-replace" />
+            Replace existing (uncheck to merge)
+          </label>
+        </div>
+        <div class="canned-filter">
+          <label for="canned-category-filter">Filter by category:</label>
+          <select id="canned-category-filter">
+            <option value="">All categories</option>
+          </select>
+        </div>
+      </div>
+      <div id="canned-responses-list" class="canned-responses-list">
+        <!-- Canned responses will be populated by JS -->
+        <p class="empty-state">No canned responses loaded. Import a Markdown file or wait for defaults to load.</p>
+      </div>
+    </section>
+
     <!-- Export Section -->
     <section id="exports">
       <h2>Export</h2>

@@ -500,5 +500,89 @@ Body.`;
       expect(all1).not.toBe(all2); // Different array instances
       expect(all1).toEqual(all2); // Same content
     });
+
+    it('should clear library on import with replace and empty markdown', () => {
+      const markdown = `## Test
+ID: test
+Body.`;
+
+      importMarkdown(markdown, { replace: true });
+      expect(getAll()).toHaveLength(1);
+
+      importMarkdown('', { replace: true });
+      expect(getAll()).toHaveLength(0);
+    });
+  });
+
+  describe('loadDefaults', () => {
+    beforeEach(() => {
+      vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {});
+      // Clear library before each test
+      importMarkdown('', { replace: true });
+    });
+
+    it('should load from canned-responses.md', async () => {
+      const mockMarkdown = `## Default Response
+ID: default-1
+Title: Default Response Title
+
+This is a default response body.`;
+
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(mockMarkdown),
+      });
+
+      const { loadDefaults } = await import('../cannedResponses.js');
+      const responses = await loadDefaults();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith('canned-responses.md');
+      expect(responses).toHaveLength(1);
+      expect(responses[0].id).toBe('default-1');
+      expect(responses[0].title).toBe('Default Response Title');
+    });
+
+    it('should return empty array if file not found', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+      const { loadDefaults } = await import('../cannedResponses.js');
+      const responses = await loadDefaults();
+
+      expect(responses).toEqual([]);
+    });
+
+    it('should return empty array on fetch error', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+
+      const { loadDefaults } = await import('../cannedResponses.js');
+      const responses = await loadDefaults();
+
+      expect(responses).toEqual([]);
+    });
+
+    it('should populate library with defaults', async () => {
+      const mockMarkdown = `## Response One
+ID: r1
+Body 1.
+
+## Response Two
+ID: r2
+Body 2.`;
+
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(mockMarkdown),
+      });
+
+      const { loadDefaults, getAll } = await import('../cannedResponses.js');
+      await loadDefaults();
+
+      const all = getAll();
+      expect(all).toHaveLength(2);
+    });
   });
 });

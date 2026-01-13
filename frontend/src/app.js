@@ -15,6 +15,7 @@ import * as config from './config.js';
 import * as filters from './filters.js';
 import * as tags from './tags.js';
 import * as ai from './ai.js';
+import * as cannedResponses from './cannedResponses.js';
 
 /** @type {Object[]} Currently loaded bugs */
 let loadedBugs = [];
@@ -36,6 +37,10 @@ const DOM_IDS = {
   EXPORT_CSV_BTN: 'export-csv-btn',
   EXPORT_MD_BTN: 'export-md-btn',
   IMPORT_JSON: 'import-json',
+  IMPORT_CANNED_MD: 'import-canned-md',
+  IMPORT_REPLACE: 'import-replace',
+  CANNED_CATEGORY_FILTER: 'canned-category-filter',
+  CANNED_RESPONSES_LIST: 'canned-responses-list',
 };
 
 /**
@@ -51,9 +56,18 @@ function getElement(id) {
  * Initialize the application.
  * Sets up event handlers and loads initial state.
  */
-export function init() {
+export async function init() {
   console.log('[app] Initializing application...');
   setupEventListeners();
+
+  // Load default canned responses
+  try {
+    await cannedResponses.loadDefaults();
+    refreshCannedResponsesUI();
+    console.log('[app] Loaded default canned responses');
+  } catch (err) {
+    console.warn('[app] Failed to load default canned responses:', err);
+  }
 }
 
 /**
@@ -115,6 +129,24 @@ export function setupEventListeners() {
   const tableBody = getElement('bug-table-body');
   if (tableBody) {
     tableBody.addEventListener('click', handleTableAction);
+  }
+
+  // Canned responses import
+  const importCannedMd = getElement(DOM_IDS.IMPORT_CANNED_MD);
+  if (importCannedMd) {
+    importCannedMd.addEventListener('change', handleImportCannedMd);
+  }
+
+  // Canned responses category filter
+  const cannedCategoryFilter = getElement(DOM_IDS.CANNED_CATEGORY_FILTER);
+  if (cannedCategoryFilter) {
+    cannedCategoryFilter.addEventListener('change', handleCannedCategoryFilter);
+  }
+
+  // Canned responses list actions (delegation)
+  const cannedList = getElement(DOM_IDS.CANNED_RESPONSES_LIST);
+  if (cannedList) {
+    cannedList.addEventListener('click', handleCannedResponseAction);
   }
 }
 
@@ -593,6 +625,93 @@ function handleToggleSummary(bugId) {
   // Use AI summary if available, otherwise placeholder
   const summary = bug.aiSummary || 'No AI summary available. Click "Process" to generate one.';
   ui.toggleSummary(bugId, summary);
+}
+
+/**
+ * Refresh the canned responses UI.
+ * @param {string} [categoryFilter] - Optional category to filter by
+ */
+export function refreshCannedResponsesUI(categoryFilter = '') {
+  let responses = cannedResponses.getAll();
+
+  // Filter by category if specified
+  if (categoryFilter) {
+    responses = cannedResponses.getByCategory(categoryFilter);
+  }
+
+  // Update the list
+  ui.renderCannedResponsesList(responses);
+
+  // Update category filter dropdown
+  const allResponses = cannedResponses.getAll();
+  const categories = ui.extractCategories(allResponses);
+  ui.updateCannedCategoryFilter(categories, categoryFilter);
+}
+
+/**
+ * Handle canned responses markdown import.
+ * @param {Event} event - Change event from file input
+ */
+export async function handleImportCannedMd(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const replaceCheckbox = getElement(DOM_IDS.IMPORT_REPLACE);
+  const replace = replaceCheckbox?.checked || false;
+
+  try {
+    const text = await file.text();
+    cannedResponses.importMarkdown(text, { replace });
+
+    ui.showSuccess(`Imported canned responses from ${file.name}`);
+    refreshCannedResponsesUI();
+  } catch (err) {
+    ui.showError(`Failed to import: ${err.message}`);
+  }
+
+  // Reset file input
+  event.target.value = '';
+}
+
+/**
+ * Handle canned responses category filter change.
+ * @param {Event} event - Change event from select
+ */
+export function handleCannedCategoryFilter(event) {
+  const category = event.target.value;
+  refreshCannedResponsesUI(category);
+}
+
+/**
+ * Handle actions on canned response cards (copy, delete).
+ * @param {Event} event - Click event
+ */
+export async function handleCannedResponseAction(event) {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const responseId = button.dataset.responseId;
+
+  if (!responseId) return;
+
+  if (action === 'copy') {
+    const response = cannedResponses.getById(responseId);
+    if (response) {
+      try {
+        await navigator.clipboard.writeText(response.bodyTemplate);
+        ui.showSuccess('Copied to clipboard');
+      } catch (err) {
+        ui.showError('Failed to copy to clipboard');
+      }
+    }
+  } else if (action === 'delete') {
+    const deleted = cannedResponses.deleteResponse(responseId);
+    if (deleted) {
+      ui.showSuccess('Deleted response');
+      refreshCannedResponsesUI();
+    }
+  }
 }
 
 // Auto-initialize when DOM is ready

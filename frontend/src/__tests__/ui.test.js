@@ -19,6 +19,10 @@ import {
   clearBugTable,
   sortBugs,
   DOM_IDS,
+  renderCannedResponseCard,
+  renderCannedResponsesList,
+  updateCannedCategoryFilter,
+  extractCategories,
 } from '../ui.js';
 
 describe('ui module', () => {
@@ -627,6 +631,194 @@ describe('ui module', () => {
 
       const badge = container.querySelector('.tag-badge');
       expect(badge.classList.contains('tag-ai-detected-test-attached')).toBe(true);
+    });
+  });
+
+  describe('canned responses UI', () => {
+    beforeEach(() => {
+      document.body.innerHTML += `
+        <div id="canned-responses-list"></div>
+        <select id="canned-category-filter">
+          <option value="">All categories</option>
+        </select>
+      `;
+    });
+
+    describe('renderCannedResponseCard', () => {
+      it('should create a card with title and id', () => {
+        const response = {
+          id: 'need-str',
+          title: 'Ask for STR',
+          bodyTemplate: 'Please provide steps to reproduce.',
+        };
+
+        const card = renderCannedResponseCard(response);
+
+        expect(card.className).toBe('canned-response-card');
+        expect(card.dataset.responseId).toBe('need-str');
+        expect(card.querySelector('.canned-response-title').textContent).toBe('Ask for STR');
+        expect(card.querySelector('.canned-response-id').textContent).toBe('need-str');
+      });
+
+      it('should render categories as badges', () => {
+        const response = {
+          id: 'test',
+          title: 'Test',
+          categories: ['need-info', 'str'],
+          bodyTemplate: 'Body',
+        };
+
+        const card = renderCannedResponseCard(response);
+        const badges = card.querySelectorAll('.category-badge');
+
+        expect(badges.length).toBe(2);
+        expect(badges[0].textContent).toBe('need-info');
+        expect(badges[1].textContent).toBe('str');
+      });
+
+      it('should render description if present', () => {
+        const response = {
+          id: 'test',
+          title: 'Test',
+          description: 'This is a description',
+          bodyTemplate: 'Body',
+        };
+
+        const card = renderCannedResponseCard(response);
+        const desc = card.querySelector('.canned-response-description');
+
+        expect(desc).not.toBeNull();
+        expect(desc.textContent).toBe('This is a description');
+      });
+
+      it('should not render description if not present', () => {
+        const response = {
+          id: 'test',
+          title: 'Test',
+          bodyTemplate: 'Body',
+        };
+
+        const card = renderCannedResponseCard(response);
+        expect(card.querySelector('.canned-response-description')).toBeNull();
+      });
+
+      it('should render copy and delete buttons', () => {
+        const response = {
+          id: 'test',
+          title: 'Test',
+          bodyTemplate: 'Body',
+        };
+
+        const card = renderCannedResponseCard(response);
+        const copyBtn = card.querySelector('button[data-action="copy"]');
+        const deleteBtn = card.querySelector('button[data-action="delete"]');
+
+        expect(copyBtn).not.toBeNull();
+        expect(deleteBtn).not.toBeNull();
+        expect(copyBtn.dataset.responseId).toBe('test');
+        expect(deleteBtn.dataset.responseId).toBe('test');
+      });
+    });
+
+    describe('renderCannedResponsesList', () => {
+      it('should render multiple response cards', () => {
+        const responses = [
+          { id: 'r1', title: 'Response 1', bodyTemplate: 'Body 1' },
+          { id: 'r2', title: 'Response 2', bodyTemplate: 'Body 2' },
+          { id: 'r3', title: 'Response 3', bodyTemplate: 'Body 3' },
+        ];
+
+        renderCannedResponsesList(responses);
+
+        const container = document.getElementById('canned-responses-list');
+        const cards = container.querySelectorAll('.canned-response-card');
+        expect(cards.length).toBe(3);
+      });
+
+      it('should show empty state when no responses', () => {
+        renderCannedResponsesList([]);
+
+        const container = document.getElementById('canned-responses-list');
+        const emptyState = container.querySelector('.empty-state');
+        expect(emptyState).not.toBeNull();
+        expect(emptyState.textContent).toContain('No canned responses');
+      });
+
+      it('should clear previous content', () => {
+        const container = document.getElementById('canned-responses-list');
+        container.innerHTML = '<div class="old-content">Old</div>';
+
+        renderCannedResponsesList([{ id: 'new', title: 'New', bodyTemplate: 'New' }]);
+
+        expect(container.querySelector('.old-content')).toBeNull();
+        expect(container.querySelectorAll('.canned-response-card').length).toBe(1);
+      });
+    });
+
+    describe('updateCannedCategoryFilter', () => {
+      it('should add category options to select', () => {
+        // Categories should be passed in sorted order (from extractCategories)
+        updateCannedCategoryFilter(['need-info', 'resolution', 'str']);
+
+        const select = document.getElementById('canned-category-filter');
+        expect(select.options.length).toBe(4); // "All" + 3 categories
+        expect(select.options[1].value).toBe('need-info');
+        expect(select.options[2].value).toBe('resolution');
+        expect(select.options[3].value).toBe('str');
+      });
+
+      it('should select the provided category', () => {
+        updateCannedCategoryFilter(['cat-a', 'cat-b'], 'cat-b');
+
+        const select = document.getElementById('canned-category-filter');
+        expect(select.value).toBe('cat-b');
+      });
+
+      it('should preserve first option', () => {
+        updateCannedCategoryFilter(['cat-a']);
+
+        const select = document.getElementById('canned-category-filter');
+        expect(select.options[0].value).toBe('');
+        expect(select.options[0].textContent).toBe('All categories');
+      });
+    });
+
+    describe('extractCategories', () => {
+      it('should extract unique categories from responses', () => {
+        const responses = [
+          { id: 'r1', categories: ['cat-a', 'cat-b'] },
+          { id: 'r2', categories: ['cat-b', 'cat-c'] },
+          { id: 'r3', categories: ['cat-a'] },
+        ];
+
+        const categories = extractCategories(responses);
+
+        expect(categories).toEqual(['cat-a', 'cat-b', 'cat-c']);
+      });
+
+      it('should return sorted categories', () => {
+        const responses = [
+          { id: 'r1', categories: ['zebra', 'apple'] },
+        ];
+
+        const categories = extractCategories(responses);
+        expect(categories).toEqual(['apple', 'zebra']);
+      });
+
+      it('should handle responses without categories', () => {
+        const responses = [
+          { id: 'r1' },
+          { id: 'r2', categories: ['cat-a'] },
+        ];
+
+        const categories = extractCategories(responses);
+        expect(categories).toEqual(['cat-a']);
+      });
+
+      it('should return empty array for empty input', () => {
+        expect(extractCategories([])).toEqual([]);
+        expect(extractCategories(null)).toEqual([]);
+      });
     });
   });
 });

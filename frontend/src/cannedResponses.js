@@ -150,9 +150,30 @@ export function parseCannedResponsesMarkdown(markdown) {
  * @returns {Promise<CannedResponse[]>} Array of default responses
  */
 export async function loadDefaults() {
-  // TODO: Fetch canned-responses.md, parse, return
-  console.log('[cannedResponses] Loading defaults');
-  return [];
+  try {
+    const response = await fetch('canned-responses.md');
+    if (!response.ok) {
+      console.log('[cannedResponses] No default canned-responses.md found');
+      return [];
+    }
+
+    const markdown = await response.text();
+    const parsed = parseCannedResponsesMarkdown(markdown);
+
+    // Merge into library (don't replace, in case user has customized)
+    for (const newResponse of parsed) {
+      const existingIndex = responseLibrary.findIndex((r) => r.id === newResponse.id);
+      if (existingIndex < 0) {
+        responseLibrary.push(newResponse);
+      }
+    }
+
+    persist();
+    return parsed;
+  } catch (err) {
+    console.warn('[cannedResponses] Failed to load defaults:', err);
+    return [];
+  }
 }
 
 /**
