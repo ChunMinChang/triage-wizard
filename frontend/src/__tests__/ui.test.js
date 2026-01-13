@@ -23,6 +23,11 @@ import {
   renderCannedResponsesList,
   updateCannedCategoryFilter,
   extractCategories,
+  openResponseComposer,
+  closeResponseComposer,
+  getComposerBugId,
+  getComposerResponseBody,
+  setComposerResponseBody,
 } from '../ui.js';
 
 describe('ui module', () => {
@@ -818,6 +823,110 @@ describe('ui module', () => {
       it('should return empty array for empty input', () => {
         expect(extractCategories([])).toEqual([]);
         expect(extractCategories(null)).toEqual([]);
+      });
+    });
+  });
+
+  describe('response composer', () => {
+    beforeEach(() => {
+      document.body.innerHTML += `
+        <div id="response-composer-modal" hidden>
+          <span id="composer-bug-id"></span>
+          <select id="canned-response-select">
+            <option value="">-- Choose a response --</option>
+          </select>
+          <textarea id="response-body"></textarea>
+        </div>
+      `;
+    });
+
+    describe('openResponseComposer', () => {
+      it('should show the modal', () => {
+        const bug = { id: 123456 };
+        openResponseComposer(bug, []);
+
+        const modal = document.getElementById('response-composer-modal');
+        expect(modal.hidden).toBe(false);
+      });
+
+      it('should set the bug ID', () => {
+        const bug = { id: 123456 };
+        openResponseComposer(bug, []);
+
+        const bugIdSpan = document.getElementById('composer-bug-id');
+        expect(bugIdSpan.textContent).toBe('Bug 123456');
+        expect(bugIdSpan.dataset.bugId).toBe('123456');
+      });
+
+      it('should populate canned responses dropdown', () => {
+        const bug = { id: 123 };
+        const responses = [
+          { id: 'r1', title: 'Response One' },
+          { id: 'r2', title: 'Response Two' },
+        ];
+
+        openResponseComposer(bug, responses);
+
+        const select = document.getElementById('canned-response-select');
+        expect(select.options.length).toBe(3); // empty + 2 responses
+        expect(select.options[1].value).toBe('r1');
+        expect(select.options[1].textContent).toBe('Response One');
+        expect(select.options[2].value).toBe('r2');
+      });
+
+      it('should clear the response body', () => {
+        const textarea = document.getElementById('response-body');
+        textarea.value = 'previous text';
+
+        openResponseComposer({ id: 123 }, []);
+
+        expect(textarea.value).toBe('');
+      });
+    });
+
+    describe('closeResponseComposer', () => {
+      it('should hide the modal', () => {
+        const modal = document.getElementById('response-composer-modal');
+        modal.hidden = false;
+
+        closeResponseComposer();
+
+        expect(modal.hidden).toBe(true);
+      });
+    });
+
+    describe('getComposerBugId', () => {
+      it('should return the bug ID from data attribute', () => {
+        const bugIdSpan = document.getElementById('composer-bug-id');
+        bugIdSpan.dataset.bugId = '999';
+
+        expect(getComposerBugId()).toBe('999');
+      });
+
+      it('should return null if no bug ID set', () => {
+        expect(getComposerBugId()).toBe(null);
+      });
+    });
+
+    describe('getComposerResponseBody', () => {
+      it('should return the textarea value', () => {
+        const textarea = document.getElementById('response-body');
+        textarea.value = 'Hello world';
+
+        expect(getComposerResponseBody()).toBe('Hello world');
+      });
+
+      it('should return empty string if empty', () => {
+        expect(getComposerResponseBody()).toBe('');
+      });
+    });
+
+    describe('setComposerResponseBody', () => {
+      it('should set the textarea value', () => {
+        setComposerResponseBody('New response text');
+
+        const textarea = document.getElementById('response-body');
+        expect(textarea.value).toBe('New response text');
       });
     });
   });

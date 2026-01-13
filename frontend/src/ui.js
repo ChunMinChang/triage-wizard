@@ -27,6 +27,13 @@ export const DOM_IDS = {
   CANNED_CATEGORY_FILTER: 'canned-category-filter',
   IMPORT_CANNED_MD: 'import-canned-md',
   IMPORT_REPLACE: 'import-replace',
+  RESPONSE_COMPOSER_MODAL: 'response-composer-modal',
+  COMPOSER_BUG_ID: 'composer-bug-id',
+  CLOSE_COMPOSER_BTN: 'close-composer-btn',
+  CANNED_RESPONSE_SELECT: 'canned-response-select',
+  RESPONSE_BODY: 'response-body',
+  COPY_RESPONSE_BTN: 'copy-response-btn',
+  POST_RESPONSE_BTN: 'post-response-btn',
 };
 
 /** Default Bugzilla host for bug links */
@@ -151,6 +158,15 @@ function renderActions(bug) {
   summaryBtn.dataset.bugId = String(bug.id);
   summaryBtn.setAttribute('aria-expanded', 'false');
   container.appendChild(summaryBtn);
+
+  // Compose response button
+  const composeBtn = document.createElement('button');
+  composeBtn.type = 'button';
+  composeBtn.className = 'btn-small';
+  composeBtn.textContent = 'Compose';
+  composeBtn.dataset.action = 'compose';
+  composeBtn.dataset.bugId = String(bug.id);
+  container.appendChild(composeBtn);
 
   return container;
 }
@@ -491,8 +507,85 @@ function escapeHtml(str) {
  * @param {Object[]} cannedResponses - Available canned responses
  */
 export function openResponseComposer(bug, cannedResponses) {
-  // TODO: Implement in L4-F3 (per-bug canned responses UI)
-  console.log('[ui] Opening response composer for:', bug?.id);
+  const modal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  if (!modal) {
+    console.warn('[ui] Response composer modal not found');
+    return;
+  }
+
+  // Set bug ID
+  const bugIdSpan = getElement(DOM_IDS.COMPOSER_BUG_ID);
+  if (bugIdSpan) {
+    bugIdSpan.textContent = `Bug ${bug?.id || 'unknown'}`;
+    bugIdSpan.dataset.bugId = String(bug?.id || '');
+  }
+
+  // Populate canned response dropdown
+  const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+  if (select) {
+    // Keep first option, clear rest
+    const firstOption = select.options[0];
+    select.innerHTML = '';
+    select.appendChild(firstOption);
+
+    // Add canned response options
+    if (cannedResponses && cannedResponses.length > 0) {
+      cannedResponses.forEach((response) => {
+        const option = document.createElement('option');
+        option.value = response.id;
+        option.textContent = response.title || response.id;
+        select.appendChild(option);
+      });
+    }
+  }
+
+  // Clear response body
+  const textarea = getElement(DOM_IDS.RESPONSE_BODY);
+  if (textarea) {
+    textarea.value = '';
+  }
+
+  // Show modal
+  modal.hidden = false;
+}
+
+/**
+ * Close the response composer.
+ */
+export function closeResponseComposer() {
+  const modal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  if (modal) {
+    modal.hidden = true;
+  }
+}
+
+/**
+ * Get the current bug ID from the composer.
+ * @returns {string|null} Bug ID or null
+ */
+export function getComposerBugId() {
+  const bugIdSpan = getElement(DOM_IDS.COMPOSER_BUG_ID);
+  return bugIdSpan?.dataset.bugId || null;
+}
+
+/**
+ * Get the current response body text.
+ * @returns {string} Response body text
+ */
+export function getComposerResponseBody() {
+  const textarea = getElement(DOM_IDS.RESPONSE_BODY);
+  return textarea?.value || '';
+}
+
+/**
+ * Set the response body text.
+ * @param {string} text - Text to set
+ */
+export function setComposerResponseBody(text) {
+  const textarea = getElement(DOM_IDS.RESPONSE_BODY);
+  if (textarea) {
+    textarea.value = text;
+  }
 }
 
 /**

@@ -175,6 +175,33 @@
   <!-- Toast container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+  <!-- Response Composer Modal -->
+  <div id="response-composer-modal" class="modal" hidden>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>Compose Response</h2>
+        <span id="composer-bug-id" class="composer-bug-id"></span>
+        <button id="close-composer-btn" class="close-btn" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <div class="composer-controls">
+          <label for="canned-response-select">Select a canned response:</label>
+          <select id="canned-response-select">
+            <option value="">-- Choose a response --</option>
+          </select>
+        </div>
+        <div class="composer-editor">
+          <label for="response-body">Response body:</label>
+          <textarea id="response-body" rows="12" placeholder="Select a canned response above or write your own..."></textarea>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button id="copy-response-btn" type="button">Copy to Clipboard</button>
+        <button id="post-response-btn" type="button" class="btn-primary">Post to Bugzilla</button>
+      </footer>
+    </div>
+  </div>
+
   <!-- Load app as ES module -->
   <script type="module" src="src/app.js"></script>
 </body>

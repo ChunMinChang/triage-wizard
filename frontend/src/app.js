@@ -41,6 +41,12 @@ const DOM_IDS = {
   IMPORT_REPLACE: 'import-replace',
   CANNED_CATEGORY_FILTER: 'canned-category-filter',
   CANNED_RESPONSES_LIST: 'canned-responses-list',
+  RESPONSE_COMPOSER_MODAL: 'response-composer-modal',
+  CLOSE_COMPOSER_BTN: 'close-composer-btn',
+  CANNED_RESPONSE_SELECT: 'canned-response-select',
+  RESPONSE_BODY: 'response-body',
+  COPY_RESPONSE_BTN: 'copy-response-btn',
+  POST_RESPONSE_BTN: 'post-response-btn',
 };
 
 /**
@@ -147,6 +153,37 @@ export function setupEventListeners() {
   const cannedList = getElement(DOM_IDS.CANNED_RESPONSES_LIST);
   if (cannedList) {
     cannedList.addEventListener('click', handleCannedResponseAction);
+  }
+
+  // Response composer modal events
+  const closeComposerBtn = getElement(DOM_IDS.CLOSE_COMPOSER_BTN);
+  if (closeComposerBtn) {
+    closeComposerBtn.addEventListener('click', handleCloseComposer);
+  }
+
+  const cannedResponseSelect = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+  if (cannedResponseSelect) {
+    cannedResponseSelect.addEventListener('change', handleCannedResponseSelect);
+  }
+
+  const copyResponseBtn = getElement(DOM_IDS.COPY_RESPONSE_BTN);
+  if (copyResponseBtn) {
+    copyResponseBtn.addEventListener('click', handleCopyResponse);
+  }
+
+  const postResponseBtn = getElement(DOM_IDS.POST_RESPONSE_BTN);
+  if (postResponseBtn) {
+    postResponseBtn.addEventListener('click', handlePostResponse);
+  }
+
+  // Close modal on backdrop click
+  const composerModal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  if (composerModal) {
+    composerModal.addEventListener('click', (e) => {
+      if (e.target === composerModal) {
+        handleCloseComposer();
+      }
+    });
   }
 }
 
@@ -577,6 +614,8 @@ function handleTableAction(event) {
     handleProcessSingleBug(bugId);
   } else if (action === 'toggle-summary') {
     handleToggleSummary(bugId);
+  } else if (action === 'compose') {
+    handleComposeBug(bugId);
   }
 }
 
@@ -625,6 +664,85 @@ function handleToggleSummary(bugId) {
   // Use AI summary if available, otherwise placeholder
   const summary = bug.aiSummary || 'No AI summary available. Click "Process" to generate one.';
   ui.toggleSummary(bugId, summary);
+}
+
+/**
+ * Handle compose button click for a bug.
+ * @param {string} bugId - Bug ID
+ */
+function handleComposeBug(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  const responses = cannedResponses.getAll();
+  ui.openResponseComposer(bug, responses);
+}
+
+/**
+ * Handle close composer button click.
+ */
+export function handleCloseComposer() {
+  ui.closeResponseComposer();
+}
+
+/**
+ * Handle canned response select change.
+ * @param {Event} event - Change event
+ */
+export function handleCannedResponseSelect(event) {
+  const responseId = event.target.value;
+  if (!responseId) {
+    ui.setComposerResponseBody('');
+    return;
+  }
+
+  const response = cannedResponses.getById(responseId);
+  if (response) {
+    ui.setComposerResponseBody(response.bodyTemplate);
+  }
+}
+
+/**
+ * Handle copy response button click.
+ */
+export async function handleCopyResponse() {
+  const body = ui.getComposerResponseBody();
+  if (!body) {
+    ui.showInfo('No response text to copy');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(body);
+    ui.showSuccess('Copied to clipboard');
+  } catch (err) {
+    ui.showError('Failed to copy to clipboard');
+  }
+}
+
+/**
+ * Handle post response button click.
+ */
+export async function handlePostResponse() {
+  const bugId = ui.getComposerBugId();
+  const body = ui.getComposerResponseBody();
+
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  if (!body.trim()) {
+    ui.showInfo('Please enter a response');
+    return;
+  }
+
+  // TODO: Post to Bugzilla API (L4-F7)
+  ui.showInfo('Posting to Bugzilla is not yet implemented');
+  console.log('[app] Would post to bug', bugId, ':', body);
 }
 
 /**
