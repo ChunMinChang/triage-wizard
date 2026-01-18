@@ -50,7 +50,7 @@ export const NON_AI_TAGS = [
 ];
 
 /** File extensions that suggest a testcase attachment */
-const TESTCASE_EXTENSIONS = ['.html', '.xhtml', '.js', '.mjs', '.zip', '.txt'];
+const TESTCASE_EXTENSIONS = ['.html', '.js', '.zip'];
 
 /** Filename patterns that suggest a testcase attachment */
 const TESTCASE_FILENAME_PATTERNS = [
