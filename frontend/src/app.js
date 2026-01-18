@@ -509,11 +509,6 @@ export async function processBug(bug, options = {}) {
 function getSuggestedResponseId(bug) {
   const tagIds = (bug.tags || []).map((t) => t.id);
 
-  // If no Has STR and hasStrSuggested is true, suggest need-str
-  if (bug.hasStrSuggested && !tagIds.includes('has-str')) {
-    return 'need-str';
-  }
-
   // If fuzzy-test-attached, suggest fuzzing-thanks
   if (tagIds.includes('fuzzy-test-attached')) {
     return 'fuzzing-thanks';

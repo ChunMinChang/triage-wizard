@@ -132,9 +132,9 @@ export function renderBugRow(bug, options = {}) {
     <td class="actions-cell"></td>
   `;
 
-  // Add tags
+  // Add tags with "Set Has STR" button if suggested
   const tagsCell = row.querySelector('.tags-cell');
-  tagsCell.appendChild(renderTags(bug.tags));
+  tagsCell.appendChild(renderTagsWithSuggestion(bug.tags, bug.hasStrSuggested, bug.id));
 
   // Add suggested response badge if applicable
   if (bug.suggestedResponseId) {
