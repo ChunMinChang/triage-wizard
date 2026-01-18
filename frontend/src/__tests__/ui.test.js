@@ -225,6 +225,34 @@ describe('ui module', () => {
 
       expect(actionsCell.querySelector('button')).not.toBeNull();
     });
+
+    it('should render "Set Has STR" button when hasStrSuggested is true', () => {
+      const bugWithSuggestion = {
+        ...mockBug,
+        tags: [{ id: 'test-attached', label: 'test-attached' }],
+        hasStrSuggested: true,
+      };
+      const row = renderBugRow(bugWithSuggestion);
+      const tagsCell = row.querySelectorAll('td')[5];
+
+      const setHasStrBtn = tagsCell.querySelector('.btn-set-has-str');
+      expect(setHasStrBtn).not.toBeNull();
+      expect(setHasStrBtn.textContent).toBe('Set Has STR');
+      expect(setHasStrBtn.dataset.bugId).toBe('123456');
+    });
+
+    it('should NOT render "Set Has STR" button when hasStrSuggested is false', () => {
+      const bugWithoutSuggestion = {
+        ...mockBug,
+        tags: [{ id: 'crashstack', label: 'crashstack' }],
+        hasStrSuggested: false,
+      };
+      const row = renderBugRow(bugWithoutSuggestion);
+      const tagsCell = row.querySelectorAll('td')[5];
+
+      const setHasStrBtn = tagsCell.querySelector('.btn-set-has-str');
+      expect(setHasStrBtn).toBeNull();
+    });
   });
 
   describe('renderTags', () => {

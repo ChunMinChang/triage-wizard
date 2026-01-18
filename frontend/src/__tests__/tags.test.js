@@ -170,25 +170,9 @@ describe('tags module', () => {
         expect(result).not.toBeNull();
       });
 
-      it('should detect .xhtml extension', () => {
-        const bug = {
-          attachments: [{ ...baseAttachment, file_name: 'test.xhtml' }],
-        };
-        const result = checkTestAttached(bug);
-        expect(result).not.toBeNull();
-      });
-
       it('should detect .js extension', () => {
         const bug = {
           attachments: [{ ...baseAttachment, file_name: 'crash.js' }],
-        };
-        const result = checkTestAttached(bug);
-        expect(result).not.toBeNull();
-      });
-
-      it('should detect .mjs extension', () => {
-        const bug = {
-          attachments: [{ ...baseAttachment, file_name: 'module.mjs' }],
         };
         const result = checkTestAttached(bug);
         expect(result).not.toBeNull();
@@ -200,6 +184,39 @@ describe('tags module', () => {
         };
         const result = checkTestAttached(bug);
         expect(result).not.toBeNull();
+      });
+
+      it('should NOT detect .txt extension (too generic, often logs)', () => {
+        const bug = {
+          attachments: [{ ...baseAttachment, file_name: 'logs.txt' }],
+        };
+        const result = checkTestAttached(bug);
+        expect(result).toBeNull();
+      });
+
+      it('should NOT detect .xhtml extension (removed to reduce false positives)', () => {
+        const bug = {
+          attachments: [{ ...baseAttachment, file_name: 'test.xhtml' }],
+        };
+        const result = checkTestAttached(bug);
+        expect(result).toBeNull();
+      });
+
+      it('should NOT detect .mjs extension (removed to reduce false positives)', () => {
+        const bug = {
+          attachments: [{ ...baseAttachment, file_name: 'module.mjs' }],
+        };
+        const result = checkTestAttached(bug);
+        expect(result).toBeNull();
+      });
+
+      it('should still detect testcase.txt via filename pattern', () => {
+        const bug = {
+          attachments: [{ ...baseAttachment, file_name: 'testcase.txt' }],
+        };
+        const result = checkTestAttached(bug);
+        expect(result).not.toBeNull();
+        expect(result.evidence).toContain('filename matches testcase pattern');
       });
 
       it('should skip obsolete attachments', () => {
