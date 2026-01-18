@@ -25,8 +25,8 @@ export const PROVIDERS = {
 
 /** Default models for each provider */
 export const DEFAULT_MODELS = {
-  gemini: 'gemini-2.0-flash',
-  claude: 'claude-sonnet-4-5-20250514',
+  gemini: 'gemini-2.5-flash',
+  claude: 'claude-sonnet-4-5-20250929',
   openai: 'gpt-4o',
   grok: 'grok-2',
 };
@@ -610,12 +610,13 @@ function parseJsonFromResponse(text) {
  */
 async function callGeminiBrowser(prompt, config) {
   const model = config.model || DEFAULT_MODELS.gemini;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-goog-api-key': config.apiKey,
     },
     body: JSON.stringify({
       contents: [

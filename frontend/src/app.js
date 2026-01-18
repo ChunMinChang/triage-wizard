@@ -32,6 +32,13 @@ const MAX_HISTORY_SIZE = 20;
 
 /** DOM element IDs used by this module */
 const DOM_IDS = {
+  // Settings
+  BUGZILLA_HOST: 'bugzilla-host',
+  BUGZILLA_API_KEY: 'bugzilla-api-key',
+  AI_PROVIDER: 'ai-provider',
+  AI_MODEL: 'ai-model',
+  AI_API_KEY: 'ai-api-key',
+  // Bug input
   BUG_INPUT: 'bug-input-field',
   LOAD_BTN: 'load-bugs-btn',
   PROCESS_ALL_BTN: 'process-all-btn',
@@ -89,6 +96,10 @@ function getElement(id) {
  */
 export async function init() {
   console.log('[app] Initializing application...');
+
+  // Load saved settings into form fields
+  loadSettingsIntoForm();
+
   setupEventListeners();
 
   // Load default canned responses
@@ -102,9 +113,74 @@ export async function init() {
 }
 
 /**
+ * Load saved settings into form fields.
+ */
+function loadSettingsIntoForm() {
+  const cfg = config.getConfig();
+
+  const bugzillaHost = getElement(DOM_IDS.BUGZILLA_HOST);
+  if (bugzillaHost) bugzillaHost.value = cfg.bugzillaHost || '';
+
+  const bugzillaApiKey = getElement(DOM_IDS.BUGZILLA_API_KEY);
+  if (bugzillaApiKey) bugzillaApiKey.value = cfg.bugzillaApiKey || '';
+
+  const aiProvider = getElement(DOM_IDS.AI_PROVIDER);
+  if (aiProvider) aiProvider.value = cfg.aiProvider || 'none';
+
+  const aiModel = getElement(DOM_IDS.AI_MODEL);
+  if (aiModel) aiModel.value = cfg.aiModel || '';
+
+  const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
+  if (aiApiKey) aiApiKey.value = cfg.aiApiKey || '';
+
+  console.log('[app] Loaded settings into form');
+}
+
+/**
+ * Save a setting when it changes.
+ * @param {string} key - Config key
+ * @param {string} value - New value
+ */
+function saveSetting(key, value) {
+  const result = config.updateConfig({ [key]: value });
+  if (result.valid) {
+    console.log(`[app] Saved setting: ${key}`);
+  } else {
+    console.warn(`[app] Failed to save setting ${key}:`, result.errors);
+    ui.showError(`Invalid setting: ${result.errors.join(', ')}`);
+  }
+}
+
+/**
  * Set up event listeners for UI controls.
  */
 export function setupEventListeners() {
+  // Settings - save on change
+  const bugzillaHost = getElement(DOM_IDS.BUGZILLA_HOST);
+  if (bugzillaHost) {
+    bugzillaHost.addEventListener('change', () => saveSetting('bugzillaHost', bugzillaHost.value));
+  }
+
+  const bugzillaApiKey = getElement(DOM_IDS.BUGZILLA_API_KEY);
+  if (bugzillaApiKey) {
+    bugzillaApiKey.addEventListener('change', () => saveSetting('bugzillaApiKey', bugzillaApiKey.value));
+  }
+
+  const aiProvider = getElement(DOM_IDS.AI_PROVIDER);
+  if (aiProvider) {
+    aiProvider.addEventListener('change', () => saveSetting('aiProvider', aiProvider.value));
+  }
+
+  const aiModel = getElement(DOM_IDS.AI_MODEL);
+  if (aiModel) {
+    aiModel.addEventListener('change', () => saveSetting('aiModel', aiModel.value));
+  }
+
+  const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
+  if (aiApiKey) {
+    aiApiKey.addEventListener('change', () => saveSetting('aiApiKey', aiApiKey.value));
+  }
+
   // Load bugs button
   const loadBtn = getElement(DOM_IDS.LOAD_BTN);
   if (loadBtn) {
@@ -475,21 +551,33 @@ export async function processBug(bug, options = {}) {
   };
 
   if (options.runAi && ai.isProviderConfigured(aiConfig)) {
+    processed.aiAttempted = true;
     try {
       const aiResult = await ai.classifyBug(processed, aiConfig);
 
-      // Merge AI tags with heuristic tags (enforces semantic rules)
-      processed.tags = tags.mergeAiTags(processed.tags, aiResult);
+      // Check if we got an actual result
+      if (!aiResult || (!aiResult.summary && !aiResult.ai_detected_str && !aiResult.ai_detected_test_attached)) {
+        processed.aiError = 'AI returned empty result - check API key and provider configuration';
+      } else {
+        // Merge AI tags with heuristic tags (enforces semantic rules)
+        processed.tags = tags.mergeAiTags(processed.tags, aiResult);
 
-      // Store AI summary
-      processed.aiSummary = aiResult.summary;
+        // Store AI summary
+        processed.aiSummary = aiResult.summary;
+      }
 
       // Calculate hasStrSuggested
       processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
     } catch (error) {
       console.warn('[app] AI classification failed:', error);
+      // Store error so it can be displayed to user
+      processed.aiError = error.message || String(error);
       // Continue without AI tags - heuristics still available
     }
+  } else if (options.runAi) {
+    // AI was requested but provider not configured
+    processed.aiError = 'AI provider not configured - check Settings';
+    processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
   } else {
     // Calculate hasStrSuggested with heuristic tags only
     processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
@@ -553,7 +641,15 @@ export async function processAllBugs(bugs, options = {}) {
     const availableTags = collectAvailableTags(processed);
     ui.updateFilterControls(availableTags, {});
 
-    ui.showSuccess(`Processed ${processed.length} bugs`);
+    // Check for AI errors and show appropriate notification
+    const aiErrors = processed.filter((b) => b.aiError);
+    if (aiErrors.length > 0) {
+      ui.showError(
+        `Processed ${processed.length} bugs, but AI failed for ${aiErrors.length}: ${aiErrors[0].aiError}`
+      );
+    } else {
+      ui.showSuccess(`Processed ${processed.length} bugs`);
+    }
 
     return processed;
   } finally {
@@ -910,7 +1006,12 @@ async function handleProcessSingleBug(bugId) {
     const cfg = config.getConfig();
     ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
 
-    ui.showSuccess(`Processed bug ${bugId}`);
+    // Show appropriate notification based on AI result
+    if (processed.aiError) {
+      ui.showError(`Processed bug ${bugId}, but AI failed: ${processed.aiError}`);
+    } else {
+      ui.showSuccess(`Processed bug ${bugId}`);
+    }
   } catch (error) {
     ui.showError(`Failed to process bug ${bugId}: ${error.message}`);
   } finally {

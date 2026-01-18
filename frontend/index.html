@@ -42,6 +42,35 @@
             </select>
           </label>
           <label>
+            Model:
+            <input type="text" id="ai-model" list="ai-model-suggestions" placeholder="Leave empty for default" />
+            <datalist id="ai-model-suggestions">
+              <!-- Gemini 2.5 models (recommended) -->
+              <option value="gemini-2.5-flash">
+              <option value="gemini-2.5-flash-lite">
+              <option value="gemini-2.5-pro">
+              <!-- Gemini 3 preview models -->
+              <option value="gemini-3-flash-preview">
+              <option value="gemini-3-pro-preview">
+              <!-- Gemini 2.0 models -->
+              <option value="gemini-2.0-flash">
+              <option value="gemini-2.0-flash-lite">
+              <!-- Gemini 1.5 legacy -->
+              <option value="gemini-1.5-flash">
+              <option value="gemini-1.5-pro">
+              <!-- Claude 4 models (recommended) -->
+              <option value="claude-sonnet-4-5-20250929">
+              <option value="claude-sonnet-4">
+              <option value="claude-opus-4-5-20251101">
+              <option value="claude-opus-4-5">
+              <option value="claude-opus-4-1-20250805">
+              <option value="claude-opus-4">
+              <!-- Claude 3.5 legacy -->
+              <option value="claude-3-5-sonnet-20241022">
+              <option value="claude-3-5-haiku-20241022">
+            </datalist>
+          </label>
+          <label>
             API Key:
             <input type="password" id="ai-api-key" />
           </label>

@@ -501,18 +501,20 @@ describe('ai module', () => {
 
       await classifyBug(
         { id: 123, summary: 'Test' },
-        { provider: 'gemini', transport: 'browser', apiKey: 'my-api-key', model: 'gemini-2.0-flash' }
+        { provider: 'gemini', transport: 'browser', apiKey: 'my-api-key', model: 'gemini-2.5-flash' }
       );
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('generativelanguage.googleapis.com'),
         expect.objectContaining({
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'x-goog-api-key': 'my-api-key',
+          }),
         })
       );
-      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.0-flash');
-      expect(global.fetch.mock.calls[0][0]).toContain('key=my-api-key');
+      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.5-flash');
     });
 
     it('should use default model when not specified', async () => {
@@ -526,7 +528,7 @@ describe('ai module', () => {
         { provider: 'gemini', transport: 'browser', apiKey: 'test-key' }
       );
 
-      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.0-flash');
+      expect(global.fetch.mock.calls[0][0]).toContain('gemini-2.5-flash');
     });
 
     it('should request JSON mime type from Gemini', async () => {
