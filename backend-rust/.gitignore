@@ -1,0 +1,10 @@
+# Cargo build artifacts
+/target/
+
+# Environment file (contains secrets)
+.env
+
+# Editor files
+*.swp
+*.swo
+*~
