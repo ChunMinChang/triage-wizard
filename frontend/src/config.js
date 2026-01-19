@@ -23,7 +23,7 @@ export const DEFAULTS = {
   aiModel: '',
   aiTransport: 'browser', // browser | backend
   aiApiKey: '',
-  backendUrl: 'http://localhost:3000',
+  backendUrl: '', // Empty = same-origin (use when served from backend)
 };
 
 /** Valid AI provider options */
@@ -82,7 +82,8 @@ export function validateConfig(config) {
     errors.push('Invalid Bugzilla host URL');
   }
 
-  if (!isValidUrl(config.backendUrl)) {
+  // backendUrl can be empty (same-origin) or a valid URL
+  if (config.backendUrl && !isValidUrl(config.backendUrl)) {
     errors.push('Invalid backend URL');
   }
 

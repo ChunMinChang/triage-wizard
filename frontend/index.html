@@ -42,6 +42,13 @@
             </select>
           </label>
           <label>
+            Transport:
+            <select id="ai-transport">
+              <option value="browser">Browser (direct API calls)</option>
+              <option value="backend">Backend (via proxy server)</option>
+            </select>
+          </label>
+          <label>
             Model:
             <input type="text" id="ai-model" list="ai-model-suggestions" placeholder="Leave empty for default" />
             <datalist id="ai-model-suggestions">
@@ -70,9 +77,13 @@
               <option value="claude-3-5-haiku-20241022">
             </datalist>
           </label>
-          <label>
+          <label id="ai-api-key-label">
             API Key:
             <input type="password" id="ai-api-key" />
+          </label>
+          <label id="backend-url-label">
+            Backend URL:
+            <input type="text" id="backend-url" value="" placeholder="Leave empty for same-origin" />
           </label>
         </fieldset>
       </div>

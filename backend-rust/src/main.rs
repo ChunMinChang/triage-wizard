@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tracing::info;
 
 mod claude_cli;
@@ -141,19 +142,28 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    // Build router
+    // Determine frontend directory path
+    // Try relative path from backend-rust directory, or use FRONTEND_DIR env var
+    let frontend_dir = std::env::var("FRONTEND_DIR")
+        .unwrap_or_else(|_| "../frontend".to_string());
+
+    info!("Serving frontend from: {}", frontend_dir);
+
+    // Build router - API routes first, then fallback to static files
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/status", get(status_page))
         .route("/api/ai/classify", post(classify_bug))
         .route("/api/ai/customize-response", post(customize_response))
         .route("/api/ai/suggest-response", post(suggest_response))
+        .fallback_service(ServeDir::new(&frontend_dir))
         .layer(cors)
         .with_state(state);
 
     // Start server
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let addr = format!("0.0.0.0:{}", port);
-    info!("Starting server on {}", addr);
+    info!("Starting server on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -165,6 +175,120 @@ async fn health_check() -> impl IntoResponse {
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION")
     }))
+}
+
+/// Status page - shows backend configuration and checks
+async fn status_page(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // Check if Claude CLI is available
+    let claude_check = tokio::process::Command::new("claude")
+        .arg("--version")
+        .output()
+        .await;
+
+    let (claude_available, claude_version) = match claude_check {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            (true, version)
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            (false, format!("Error: {}", stderr))
+        }
+        Err(e) => (false, format!("Not found: {}", e)),
+    };
+
+    let claude_status = if claude_available { "✅" } else { "❌" };
+    let mode_info = if state.claude_mode == "cli" {
+        "Claude Code CLI (recommended)"
+    } else {
+        "HTTP API"
+    };
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Triage Wizard - Backend Status</title>
+    <style>
+        body {{ font-family: system-ui, sans-serif; max-width: 700px; margin: 50px auto; padding: 20px; }}
+        h1 {{ color: #333; }}
+        .status-card {{ background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+        .status-row {{ display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }}
+        .status-row:last-child {{ border-bottom: none; }}
+        .label {{ font-weight: 500; color: #555; }}
+        .value {{ font-family: monospace; }}
+        .ok {{ color: #28a745; }}
+        .error {{ color: #dc3545; }}
+        code {{ background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }}
+        a {{ color: #007bff; }}
+        .nav {{ margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">← Back to App</a>
+    </div>
+    <h1>Backend Status</h1>
+
+    <div class="status-card">
+        <h3>Server</h3>
+        <div class="status-row">
+            <span class="label">Status</span>
+            <span class="value ok">✅ Running</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Version</span>
+            <span class="value">{version}</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Mode</span>
+            <span class="value">{mode_info}</span>
+        </div>
+    </div>
+
+    <div class="status-card">
+        <h3>Claude Code CLI</h3>
+        <div class="status-row">
+            <span class="label">Available</span>
+            <span class="value">{claude_status} {claude_available_text}</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Version</span>
+            <span class="value">{claude_version}</span>
+        </div>
+    </div>
+
+    <div class="status-card">
+        <h3>API Endpoints</h3>
+        <div class="status-row">
+            <span class="label">Health</span>
+            <span class="value"><code>GET /health</code></span>
+        </div>
+        <div class="status-row">
+            <span class="label">Classify</span>
+            <span class="value"><code>POST /api/ai/classify</code></span>
+        </div>
+        <div class="status-row">
+            <span class="label">Customize</span>
+            <span class="value"><code>POST /api/ai/customize-response</code></span>
+        </div>
+        <div class="status-row">
+            <span class="label">Suggest</span>
+            <span class="value"><code>POST /api/ai/suggest-response</code></span>
+        </div>
+    </div>
+
+    <p><small>Refresh this page to re-check status.</small></p>
+</body>
+</html>"#,
+        version = env!("CARGO_PKG_VERSION"),
+        mode_info = mode_info,
+        claude_status = claude_status,
+        claude_available_text = if claude_available { "Yes" } else { "No" },
+        claude_version = claude_version,
+    );
+
+    axum::response::Html(html)
 }
 
 /// Classify a bug using AI

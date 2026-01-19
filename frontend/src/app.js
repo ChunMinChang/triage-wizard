@@ -36,8 +36,12 @@ const DOM_IDS = {
   BUGZILLA_HOST: 'bugzilla-host',
   BUGZILLA_API_KEY: 'bugzilla-api-key',
   AI_PROVIDER: 'ai-provider',
+  AI_TRANSPORT: 'ai-transport',
   AI_MODEL: 'ai-model',
   AI_API_KEY: 'ai-api-key',
+  AI_API_KEY_LABEL: 'ai-api-key-label',
+  BACKEND_URL: 'backend-url',
+  BACKEND_URL_LABEL: 'backend-url-label',
   // Bug input
   BUG_INPUT: 'bug-input-field',
   LOAD_BTN: 'load-bugs-btn',
@@ -127,13 +131,41 @@ function loadSettingsIntoForm() {
   const aiProvider = getElement(DOM_IDS.AI_PROVIDER);
   if (aiProvider) aiProvider.value = cfg.aiProvider || 'none';
 
+  const aiTransport = getElement(DOM_IDS.AI_TRANSPORT);
+  if (aiTransport) aiTransport.value = cfg.aiTransport || 'browser';
+
   const aiModel = getElement(DOM_IDS.AI_MODEL);
   if (aiModel) aiModel.value = cfg.aiModel || '';
 
   const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
   if (aiApiKey) aiApiKey.value = cfg.aiApiKey || '';
 
+  const backendUrl = getElement(DOM_IDS.BACKEND_URL);
+  if (backendUrl) backendUrl.value = cfg.backendUrl || 'http://localhost:3000';
+
+  // Update visibility of API key vs backend URL based on transport
+  updateTransportFieldVisibility(cfg.aiTransport || 'browser');
+
   console.log('[app] Loaded settings into form');
+}
+
+/**
+ * Update visibility of API key and backend URL fields based on transport mode.
+ * @param {string} transport - 'browser' or 'backend'
+ */
+function updateTransportFieldVisibility(transport) {
+  const apiKeyLabel = getElement(DOM_IDS.AI_API_KEY_LABEL);
+  const backendUrlLabel = getElement(DOM_IDS.BACKEND_URL_LABEL);
+
+  if (transport === 'backend') {
+    // Backend mode: show backend URL, hide API key (backend handles auth)
+    if (apiKeyLabel) apiKeyLabel.style.display = 'none';
+    if (backendUrlLabel) backendUrlLabel.style.display = 'block';
+  } else {
+    // Browser mode: show API key, hide backend URL
+    if (apiKeyLabel) apiKeyLabel.style.display = 'block';
+    if (backendUrlLabel) backendUrlLabel.style.display = 'none';
+  }
 }
 
 /**
@@ -171,6 +203,14 @@ export function setupEventListeners() {
     aiProvider.addEventListener('change', () => saveSetting('aiProvider', aiProvider.value));
   }
 
+  const aiTransport = getElement(DOM_IDS.AI_TRANSPORT);
+  if (aiTransport) {
+    aiTransport.addEventListener('change', () => {
+      saveSetting('aiTransport', aiTransport.value);
+      updateTransportFieldVisibility(aiTransport.value);
+    });
+  }
+
   const aiModel = getElement(DOM_IDS.AI_MODEL);
   if (aiModel) {
     aiModel.addEventListener('change', () => saveSetting('aiModel', aiModel.value));
@@ -179,6 +219,11 @@ export function setupEventListeners() {
   const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
   if (aiApiKey) {
     aiApiKey.addEventListener('change', () => saveSetting('aiApiKey', aiApiKey.value));
+  }
+
+  const backendUrl = getElement(DOM_IDS.BACKEND_URL);
+  if (backendUrl) {
+    backendUrl.addEventListener('change', () => saveSetting('backendUrl', backendUrl.value));
   }
 
   // Load bugs button
@@ -548,6 +593,7 @@ export async function processBug(bug, options = {}) {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (options.runAi && ai.isProviderConfigured(aiConfig)) {
@@ -575,8 +621,15 @@ export async function processBug(bug, options = {}) {
       // Continue without AI tags - heuristics still available
     }
   } else if (options.runAi) {
-    // AI was requested but provider not configured
-    processed.aiError = 'AI provider not configured - check Settings';
+    // AI was requested but provider not configured - give specific guidance
+    const cfg = config.getConfig();
+    if (!cfg.aiProvider || cfg.aiProvider === 'none') {
+      processed.aiError = 'AI provider not set - go to Settings and select Claude or Gemini';
+    } else if (cfg.aiTransport === 'browser' && !cfg.aiApiKey) {
+      processed.aiError = `API key required for browser mode - add your ${cfg.aiProvider} API key in Settings, or switch to Backend transport`;
+    } else {
+      processed.aiError = 'AI provider not configured - check Settings';
+    }
     processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
   } else {
     // Calculate hasStrSuggested with heuristic tags only
@@ -1326,6 +1379,7 @@ export async function handleAiSuggest() {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (!ai.isProviderConfigured(aiConfig)) {
@@ -1416,6 +1470,7 @@ export async function handleAiCustomize() {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (!ai.isProviderConfigured(aiConfig)) {
@@ -1481,6 +1536,7 @@ export async function handleAiGenerate() {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (!ai.isProviderConfigured(aiConfig)) {
@@ -1554,6 +1610,7 @@ export async function handleAiSuggestActions() {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (!ai.isProviderConfigured(aiConfig)) {
@@ -1720,6 +1777,7 @@ export async function handleRefine() {
     transport: cfg.aiTransport || 'browser',
     apiKey: cfg.aiApiKey,
     model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
   };
 
   if (!ai.isProviderConfigured(aiConfig)) {

@@ -40,8 +40,8 @@ export const TRANSPORT_MODES = {
 /** Providers that support browser mode */
 const BROWSER_MODE_PROVIDERS = ['gemini', 'claude'];
 
-/** Backend proxy base URL */
-const BACKEND_PROXY_URL = 'http://localhost:3000';
+/** Default backend proxy base URL (can be overridden in config) */
+const DEFAULT_BACKEND_URL = 'http://localhost:3000';
 
 /**
  * Classification result schema.
@@ -696,11 +696,17 @@ async function callClaudeBrowser(prompt, config) {
  * Call backend proxy for AI request.
  * @param {string} task - Task type (classify, customize, suggest)
  * @param {Object} payload - Request payload
- * @param {Object} config - Provider config
+ * @param {Object} config - Provider config (should include backendUrl)
  * @returns {Promise<Object>} Parsed response
  */
 async function callBackendProxy(task, payload, config) {
-  const url = `${BACKEND_PROXY_URL}/api/ai/${task}`;
+  // If backendUrl is empty or same as current origin, use relative path (same-origin)
+  // This allows the backend to serve both frontend and API from one server
+  let baseUrl = config.backendUrl || '';
+  if (!baseUrl || baseUrl === window.location.origin) {
+    baseUrl = ''; // Use relative path for same-origin
+  }
+  const url = `${baseUrl}/api/ai/${task}`;
 
   const response = await fetch(url, {
     method: 'POST',
