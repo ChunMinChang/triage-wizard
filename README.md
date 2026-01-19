@@ -111,6 +111,49 @@ In the app’s **Settings**:
 
 ---
 
+## Risks: Frontend-Only Mode
+
+When using the app without the backend proxy, be aware of the following risks:
+
+### API Key Exposure
+
+Your AI provider API keys (Gemini, Claude) are:
+- **Stored in browser localStorage** — accessible via browser developer tools
+- **Sent directly from your browser** to the AI provider's API
+- **Visible to browser extensions** that have permission to read page data
+
+**Mitigations:**
+- Use API keys with restricted permissions/quotas when possible
+- Avoid using the app on shared or public computers
+- Consider using the backend proxy for production use
+
+### CORS Restrictions
+
+Some AI providers may block browser-based (CORS) requests:
+- **Claude**: Organizations with custom data retention policies cannot use browser mode
+- **OpenAI**: Does not support browser-mode CORS requests
+
+If you encounter CORS errors, you must use the backend proxy.
+
+### No Server-Side Protection
+
+In frontend-only mode:
+- No server-side rate limiting — you rely entirely on the AI provider's rate limits
+- No request validation — malformed requests go directly to APIs
+- No audit logging — no server-side record of API usage
+
+### Browser Storage Limitations
+
+- **localStorage limits**: ~5-10MB depending on browser
+- **Data persistence**: Can be cleared by browser cleanup, private browsing, or user action
+- **No sync**: Settings and data are local to each browser/device
+
+### Recommendation
+
+For occasional personal use, frontend-only mode is convenient. For team or production use, consider running the backend proxy for better security and reliability.
+
+---
+
 ## Optional: Run the Rust backend proxy
 
 The backend is only needed if:
