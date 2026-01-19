@@ -62,21 +62,28 @@ If you believe this decision should be reconsidered, please comment with additio
 
 ## need-profile
 ID: need-profile
-Title: Ask for Performance Profile
-Categories: need-info, performance
-Description: Request a performance profile for perf-related bugs.
+Title: Ask for Firefox Profile with Logs
+Categories: need-info, profile, logs
+Description: Request a Firefox profile with logging to diagnose issues.
 
-Thanks for reporting this performance issue!
+Thanks for reporting this issue!
 
-To help investigate, could you please provide a performance profile?
+To help us investigate, could you please capture a **Firefox profile with logs**? Here's how:
 
-1. Open Firefox and navigate to `about:profiling`
-2. Configure the profiler settings (or use defaults)
-3. Click "Start Recording"
-4. Reproduce the slow behavior
-5. Click "Capture Profile" and share the link
+1. Install the Firefox Profiler add-on: https://profiler.firefox.com/
+2. Go to `about:logging` in your Firefox address bar
+3. Select the **Logging preset** that matches your issue:
+   - **Media playback** – for audio/video playing issues
+   - **WebRTC** – for Web Conferencing issues (e.g., Google Meet)
+   - **Graphics** – for screen display issues (e.g., wrong color, black screen)
+   - **Networking** – for connection issues (internet, socket errors)
+   - **Custom** – for other issues (let us know and we'll provide the log modules needed)
+4. Click **Set Log Modules**, then click **Start Logging**
+5. Open a **new tab** and reproduce the steps that cause the issue
+6. Once reproduced, **close that tab**, go back to `about:logging`, and click **Stop Logging**
+7. The Firefox Profiler should launch automatically – please **share the profile link** here
 
-This will help us identify what's causing the slowdown.
+This will help us identify what's causing the problem. Thanks!
 
 ## fuzzing-thanks
 ID: fuzzing-thanks
