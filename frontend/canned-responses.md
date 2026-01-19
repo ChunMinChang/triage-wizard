@@ -110,6 +110,14 @@ Could you please provide more information to help us investigate?
 - Any browser extensions installed
 - When did this start happening?
 
+If this is a **regression** (something that used to work but now doesn't), it would be very helpful if you could use **mozregression** to identify when the bug started:
+
+1. Install mozregression: https://mozilla.github.io/mozregression/
+2. Run it and follow the prompts to bisect between a known good and bad version
+3. Share the regression range or the changeset that introduced the issue
+
+This helps us pinpoint the exact change that caused the problem.
+
 ## confirmed
 ID: confirmed
 Title: Bug Confirmed
