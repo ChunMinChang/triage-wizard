@@ -2,50 +2,81 @@
 
 ## Stack
 - Pure HTML/CSS/JS
-- ES modules
+- ES modules (no build step)
 - No frameworks
 
-## Entry points
-- `frontend/index.html` loads `src/app.js`
+## Entry point
+- `index.html` loads `src/app.js` as ES module
 
 ## Module map
 
-- `src/app.js`
-  - wiring, orchestration, event handlers
-- `src/bugzilla.js`
-  - Bugzilla REST fetch
-  - buglist.cgi parsing + mapping
-  - JSONP fallback for GET-only
-- `src/ai.js`
-  - provider abstraction
-  - tasks: classify, customize response, suggest response
-- `src/tags.js`
-  - tag computation + evidence
-  - enforce test-attached semantics
-- `src/ui.js`
-  - DOM rendering
-  - expandable summary rows
-  - response composer panel
-- `src/filters.js`
-  - tag filters + difference filters + presets
-- `src/cannedResponses.js`
-  - load defaults from `canned-responses.md` if present
-  - import `.md` by spec
-  - save to localStorage
-- `src/exports.js`
-  - JSON/CSV/Markdown export
-- `src/storage.js`
-  - localStorage wrapper
+### Core modules
+- `src/app.js` - Orchestration, event handlers, bug processing workflow
+- `src/ui.js` - DOM rendering, table, modals, toasts, response composer
+- `src/bugzilla.js` - Bugzilla REST API, buglist.cgi parsing
+- `src/ai.js` - AI provider abstraction (Gemini, Claude), API calls
+- `src/prompts.js` - **All AI prompts and schemas (centralized)**
+- `src/tags.js` - Tag computation, evidence tracking, semantic rules
+- `src/filters.js` - Tag filters, difference filters, presets
+
+### Support modules
+- `src/config.js` - Settings management, localStorage config
+- `src/storage.js` - localStorage wrapper with namespacing
+- `src/cannedResponses.js` - Canned response library, Markdown import
+- `src/exports.js` - JSON/CSV/Markdown export
+- `src/aiLogger.js` - AI interaction logging for debugging
+
+## Key architectural decisions
+
+### AI prompts centralized
+All AI prompts and JSON schemas are in `src/prompts.js`:
+- `SCHEMAS` object contains all output schemas
+- `buildClassifyPrompt()`, `buildGeneratePrompt()`, etc. build prompts
+- Used by both browser mode (direct API) and backend mode (passed to backend)
+
+### Tag semantics
+- `test-attached` - Set only by heuristics (attachment analysis)
+- `AI-detected test-attached` - Set only by AI
+- Never conflate these tags
+
+### Response composer flow
+1. User selects canned response
+2. User optionally selects AI options (chips: Shorter, Friendlier, +STR)
+3. User clicks "AI Customize" - combines base customization with selected options
+4. Response is refined in one AI call
+
+### Test page generation
+- Triggered automatically during bug processing (if AI enabled, no test attached)
+- Generated HTML stored as blob URL on bug object
+- UI shows "Open Test" link and download button if generated
+
+## File locations
+
+| Purpose | File |
+|---------|------|
+| Bug loading | `src/bugzilla.js` |
+| AI provider routing | `src/ai.js` |
+| AI prompts/schemas | `src/prompts.js` |
+| Tag rules | `src/tags.js` |
+| Filter logic | `src/filters.js` |
+| Table rendering | `src/ui.js` |
+| Response composer | `src/ui.js` |
+| Canned responses | `src/cannedResponses.js` |
+| Export formats | `src/exports.js` |
+| Settings | `src/config.js` |
 
 ## Frontend rules
 
-- Never put API keys into exports.
-- Do not conflate AI tags with non-AI tags.
-- Keep UI accessible:
-  - buttons for expand/collapse summary should use `aria-expanded`.
+- Never put API keys into exports
+- Do not conflate AI tags with non-AI tags
+- Keep UI accessible (aria-expanded on toggles)
+- Canned responses must follow `docs/canned-responses-spec.md`
 
-## Canned responses Markdown
+## Testing
 
-- Must follow `docs/canned-responses-spec.md`.
-- Import UI should allow merge or replace.
+```bash
+npm install   # First time only
+npm test      # Run Vitest tests
+```
 
+Tests are in `src/__tests__/` directory.

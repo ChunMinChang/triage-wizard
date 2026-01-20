@@ -1,0 +1,2139 @@
+/**
+ * @fileoverview Main application orchestration module.
+ *
+ * Responsibilities:
+ * - Wire UI event handlers
+ * - Orchestrate bug loading, processing, and exports
+ * - Coordinate between modules (bugzilla, ai, tags, ui, filters)
+ *
+ * @module app
+ */
+
+import * as bugzilla from './bugzilla.js';
+import * as ui from './ui.js';
+import * as config from './config.js';
+import * as filters from './filters.js';
+import * as tags from './tags.js';
+import * as ai from './ai.js';
+import * as cannedResponses from './cannedResponses.js';
+import * as exports from './exports.js';
+import * as aiLogger from './aiLogger.js';
+
+/** @type {Object[]} Currently loaded bugs */
+let loadedBugs = [];
+
+/** @type {Object} Current filter state */
+let currentFilter = { include: [], exclude: [] };
+
+/** @type {string[]} Response history for undo functionality */
+let responseHistory = [];
+
+/** Maximum number of history entries to keep */
+const MAX_HISTORY_SIZE = 20;
+
+/** DOM element IDs used by this module */
+const DOM_IDS = {
+  // Settings
+  BUGZILLA_HOST: 'bugzilla-host',
+  BUGZILLA_API_KEY: 'bugzilla-api-key',
+  AI_PROVIDER: 'ai-provider',
+  AI_TRANSPORT: 'ai-transport',
+  AI_MODEL: 'ai-model',
+  AI_API_KEY: 'ai-api-key',
+  AI_API_KEY_LABEL: 'ai-api-key-label',
+  BACKEND_URL: 'backend-url',
+  BACKEND_URL_LABEL: 'backend-url-label',
+  // Bug input
+  BUG_INPUT: 'bug-input-field',
+  LOAD_BTN: 'load-bugs-btn',
+  PROCESS_ALL_BTN: 'process-all-btn',
+  APPLY_FILTER_BTN: 'apply-filter-btn',
+  CLEAR_FILTER_BTN: 'clear-filter-btn',
+  FILTER_PRESET: 'filter-preset',
+  INCLUDE_TAGS: 'include-tags',
+  EXCLUDE_TAGS: 'exclude-tags',
+  EXPORT_JSON_BTN: 'export-json-btn',
+  EXPORT_CSV_BTN: 'export-csv-btn',
+  EXPORT_MD_BTN: 'export-md-btn',
+  IMPORT_JSON: 'import-json',
+  IMPORT_CANNED_MD: 'import-canned-md',
+  IMPORT_REPLACE: 'import-replace',
+  CANNED_CATEGORY_FILTER: 'canned-category-filter',
+  CANNED_RESPONSES_LIST: 'canned-responses-list',
+  RESPONSE_COMPOSER_MODAL: 'response-composer-modal',
+  CLOSE_COMPOSER_BTN: 'close-composer-btn',
+  CANNED_RESPONSE_SELECT: 'canned-response-select',
+  RESPONSE_BODY: 'response-body',
+  COPY_RESPONSE_BTN: 'copy-response-btn',
+  POST_RESPONSE_BTN: 'post-response-btn',
+  AI_CUSTOMIZE_BTN: 'ai-customize-btn',
+  REFINE_INSTRUCTION: 'refine-instruction',
+  REFINE_CHIPS: 'refine-chips',
+  UNDO_RESPONSE_BTN: 'undo-response-btn',
+  HISTORY_INDICATOR: 'history-indicator',
+  // Canned response editor
+  NEW_RESPONSE_BTN: 'new-response-btn',
+  EXPORT_CANNED_MD_BTN: 'export-canned-md-btn',
+  CANNED_EDITOR_MODAL: 'canned-editor-modal',
+  CLOSE_CANNED_EDITOR_BTN: 'close-canned-editor-btn',
+  CANCEL_CANNED_EDITOR_BTN: 'cancel-canned-editor-btn',
+  SAVE_CANNED_EDITOR_BTN: 'save-canned-editor-btn',
+  // AI Logs
+  AI_LOGS_COUNT: 'ai-logs-count',
+  AI_LOGS_STATS: 'ai-logs-stats',
+  AI_LOGS_LIST: 'ai-logs-list',
+  REFRESH_LOGS_BTN: 'refresh-logs-btn',
+  DOWNLOAD_LOGS_BTN: 'download-logs-btn',
+  CLEAR_LOGS_BTN: 'clear-logs-btn',
+};
+
+/**
+ * Get a DOM element by ID with null check.
+ * @param {string} id - Element ID
+ * @returns {HTMLElement|null}
+ */
+function getElement(id) {
+  return document.getElementById(id);
+}
+
+/**
+ * Initialize the application.
+ * Sets up event handlers and loads initial state.
+ */
+export async function init() {
+  console.log('[app] Initializing application...');
+
+  // Detect backend and apply appropriate defaults (before loading settings into form)
+  const { backendDetected, defaultsApplied } = await config.initializeWithBackendDetection();
+  if (defaultsApplied) {
+    console.log('[app] Applied backend defaults for Claude via backend proxy');
+  }
+
+  // Show backend navigation if connected to backend
+  if (backendDetected) {
+    const backendNav = getElement('backend-nav');
+    if (backendNav) {
+      backendNav.hidden = false;
+      console.log('[app] Backend detected - showing backend navigation');
+    }
+  }
+
+  // Load saved settings into form fields
+  loadSettingsIntoForm();
+
+  setupEventListeners();
+
+  // Load default canned responses
+  try {
+    await cannedResponses.loadDefaults();
+    refreshCannedResponsesUI();
+    console.log('[app] Loaded default canned responses');
+  } catch (err) {
+    console.warn('[app] Failed to load default canned responses:', err);
+  }
+}
+
+/**
+ * Load saved settings into form fields.
+ */
+function loadSettingsIntoForm() {
+  const cfg = config.getConfig();
+
+  const bugzillaHost = getElement(DOM_IDS.BUGZILLA_HOST);
+  if (bugzillaHost) bugzillaHost.value = cfg.bugzillaHost || '';
+
+  const bugzillaApiKey = getElement(DOM_IDS.BUGZILLA_API_KEY);
+  if (bugzillaApiKey) bugzillaApiKey.value = cfg.bugzillaApiKey || '';
+
+  const aiProvider = getElement(DOM_IDS.AI_PROVIDER);
+  if (aiProvider) aiProvider.value = cfg.aiProvider || 'none';
+
+  const aiTransport = getElement(DOM_IDS.AI_TRANSPORT);
+  if (aiTransport) aiTransport.value = cfg.aiTransport || 'browser';
+
+  const aiModel = getElement(DOM_IDS.AI_MODEL);
+  if (aiModel) aiModel.value = cfg.aiModel || '';
+
+  const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
+  if (aiApiKey) aiApiKey.value = cfg.aiApiKey || '';
+
+  const backendUrl = getElement(DOM_IDS.BACKEND_URL);
+  if (backendUrl) backendUrl.value = cfg.backendUrl;
+
+  // Update visibility of AI-related fields based on provider and transport
+  updateProviderFieldVisibility(cfg.aiProvider || 'none', cfg.aiTransport || 'browser');
+
+  console.log('[app] Loaded settings into form');
+}
+
+/**
+ * Update visibility of AI-related fields based on provider selection.
+ * When provider is "none", hides Transport, Model, API Key, and Backend URL.
+ * When provider is "gemini", disables Backend transport option (not supported).
+ * Filters model suggestions to only show models for the selected provider.
+ * @param {string} provider - AI provider value ('none', 'gemini', 'claude')
+ * @param {string} transport - Transport mode ('browser' or 'backend')
+ * @returns {string} The effective transport (may change if backend not supported)
+ */
+function updateProviderFieldVisibility(provider, transport) {
+  const transportSelect = getElement(DOM_IDS.AI_TRANSPORT);
+  const transportLabel = transportSelect?.parentElement;
+  const modelInput = getElement(DOM_IDS.AI_MODEL);
+  const modelLabel = modelInput?.parentElement;
+  const apiKeyLabel = getElement(DOM_IDS.AI_API_KEY_LABEL);
+  const backendUrlLabel = getElement(DOM_IDS.BACKEND_URL_LABEL);
+
+  let effectiveTransport = transport;
+
+  if (provider === 'none') {
+    // Hide all AI-related fields when no provider is selected
+    if (transportLabel) transportLabel.style.display = 'none';
+    if (modelLabel) modelLabel.style.display = 'none';
+    if (apiKeyLabel) apiKeyLabel.style.display = 'none';
+    if (backendUrlLabel) backendUrlLabel.style.display = 'none';
+  } else {
+    // Show Transport and Model fields
+    if (transportLabel) transportLabel.style.display = 'block';
+    if (modelLabel) modelLabel.style.display = 'block';
+
+    // Filter model suggestions to only show models for selected provider
+    filterModelSuggestions(provider);
+
+    // Disable backend option for providers that don't support it
+    if (transportSelect) {
+      const backendOption = transportSelect.querySelector('option[value="backend"]');
+      if (backendOption) {
+        const supportsBackend = provider === 'claude';
+        backendOption.disabled = !supportsBackend;
+
+        // If backend was selected but not supported, switch to browser
+        if (!supportsBackend && transport === 'backend') {
+          transportSelect.value = 'browser';
+          effectiveTransport = 'browser';
+          saveSetting('aiTransport', 'browser');
+        }
+      }
+    }
+
+    // Show API key or backend URL based on transport mode
+    if (effectiveTransport === 'backend') {
+      if (apiKeyLabel) apiKeyLabel.style.display = 'none';
+      if (backendUrlLabel) backendUrlLabel.style.display = 'block';
+    } else {
+      if (apiKeyLabel) apiKeyLabel.style.display = 'block';
+      if (backendUrlLabel) backendUrlLabel.style.display = 'none';
+    }
+  }
+
+  return effectiveTransport;
+}
+
+/**
+ * Filter model suggestions datalist to only show models for the selected provider.
+ * @param {string} provider - AI provider value ('gemini', 'claude')
+ */
+function filterModelSuggestions(provider) {
+  const datalist = document.getElementById('ai-model-suggestions');
+  if (!datalist) return;
+
+  const options = datalist.querySelectorAll('option');
+  options.forEach((option) => {
+    const modelName = option.value.toLowerCase();
+    // Show option if it matches the provider prefix
+    const isMatch = modelName.startsWith(provider.toLowerCase());
+    option.disabled = !isMatch;
+    // Use hidden attribute for better browser support
+    if (isMatch) {
+      option.removeAttribute('hidden');
+    } else {
+      option.setAttribute('hidden', '');
+    }
+  });
+}
+
+/**
+ * Parse error message to extract meaningful content from HTML responses.
+ * @param {string} message - Error message (may contain HTML)
+ * @returns {string} Cleaned error message
+ */
+function parseErrorMessage(message) {
+  if (!message) return 'Unknown error';
+
+  // Check if it looks like HTML
+  if (message.includes('<!DOCTYPE') || message.includes('<html')) {
+    // Try to extract error code and message from HTML
+    const codeMatch = message.match(/Error code[:\s]*(\d+)/i);
+    const msgMatch = message.match(/Message[:\s]*([^<]+)/i);
+
+    if (codeMatch || msgMatch) {
+      const code = codeMatch ? codeMatch[1] : '';
+      const msg = msgMatch ? msgMatch[1].trim() : '';
+
+      if (code === '501') {
+        return `Backend server error (${code}): Server doesn't support this request. Make sure the backend is running and configured correctly.`;
+      }
+      if (code === '502' || code === '503' || code === '504') {
+        return `Backend server error (${code}): Server is unavailable. Check if the backend is running at the configured URL.`;
+      }
+      return `Backend error${code ? ` (${code})` : ''}: ${msg || 'Server returned an error'}`;
+    }
+
+    // Generic HTML error
+    return 'Backend returned an HTML error page. Check if the backend URL is correct and the server is running.';
+  }
+
+  // Check for common network errors
+  if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+    return 'Network error: Could not connect to the backend. Check your internet connection and backend URL.';
+  }
+
+  if (message.includes('CORS') || message.includes('cross-origin')) {
+    return 'CORS error: The backend server is not allowing requests from this origin. Check backend CORS configuration.';
+  }
+
+  return message;
+}
+
+/**
+ * Save a setting when it changes.
+ * @param {string} key - Config key
+ * @param {string} value - New value
+ */
+function saveSetting(key, value) {
+  const result = config.updateConfig({ [key]: value });
+  if (result.valid) {
+    console.log(`[app] Saved setting: ${key}`);
+  } else {
+    console.warn(`[app] Failed to save setting ${key}:`, result.errors);
+    ui.showError(`Invalid setting: ${result.errors.join(', ')}`);
+  }
+}
+
+/**
+ * Set up event listeners for UI controls.
+ */
+export function setupEventListeners() {
+  // Settings - save on change
+  const bugzillaHost = getElement(DOM_IDS.BUGZILLA_HOST);
+  if (bugzillaHost) {
+    bugzillaHost.addEventListener('change', () => saveSetting('bugzillaHost', bugzillaHost.value));
+  }
+
+  const bugzillaApiKey = getElement(DOM_IDS.BUGZILLA_API_KEY);
+  if (bugzillaApiKey) {
+    bugzillaApiKey.addEventListener('change', () => saveSetting('bugzillaApiKey', bugzillaApiKey.value));
+  }
+
+  const aiProvider = getElement(DOM_IDS.AI_PROVIDER);
+  const aiTransport = getElement(DOM_IDS.AI_TRANSPORT);
+
+  if (aiProvider) {
+    aiProvider.addEventListener('change', () => {
+      saveSetting('aiProvider', aiProvider.value);
+      updateProviderFieldVisibility(aiProvider.value, aiTransport?.value || 'browser');
+    });
+  }
+
+  if (aiTransport) {
+    aiTransport.addEventListener('change', () => {
+      saveSetting('aiTransport', aiTransport.value);
+      updateProviderFieldVisibility(aiProvider?.value || 'none', aiTransport.value);
+    });
+  }
+
+  const aiModel = getElement(DOM_IDS.AI_MODEL);
+  if (aiModel) {
+    aiModel.addEventListener('change', () => saveSetting('aiModel', aiModel.value));
+  }
+
+  const aiApiKey = getElement(DOM_IDS.AI_API_KEY);
+  if (aiApiKey) {
+    aiApiKey.addEventListener('change', () => saveSetting('aiApiKey', aiApiKey.value));
+  }
+
+  const backendUrl = getElement(DOM_IDS.BACKEND_URL);
+  if (backendUrl) {
+    backendUrl.addEventListener('change', () => saveSetting('backendUrl', backendUrl.value));
+  }
+
+  // Load bugs button
+  const loadBtn = getElement(DOM_IDS.LOAD_BTN);
+  if (loadBtn) {
+    loadBtn.addEventListener('click', handleLoadClick);
+  }
+
+  // Process all button
+  const processAllBtn = getElement(DOM_IDS.PROCESS_ALL_BTN);
+  if (processAllBtn) {
+    processAllBtn.addEventListener('click', handleProcessAllClick);
+  }
+
+  // Filter buttons
+  const applyFilterBtn = getElement(DOM_IDS.APPLY_FILTER_BTN);
+  if (applyFilterBtn) {
+    applyFilterBtn.addEventListener('click', handleApplyFilter);
+  }
+
+  const clearFilterBtn = getElement(DOM_IDS.CLEAR_FILTER_BTN);
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener('click', handleClearFilter);
+  }
+
+  // Filter preset dropdown
+  const filterPreset = getElement(DOM_IDS.FILTER_PRESET);
+  if (filterPreset) {
+    filterPreset.addEventListener('change', handlePresetChange);
+  }
+
+  // Export buttons
+  const exportJsonBtn = getElement(DOM_IDS.EXPORT_JSON_BTN);
+  if (exportJsonBtn) {
+    exportJsonBtn.addEventListener('click', handleExportJson);
+  }
+
+  const exportCsvBtn = getElement(DOM_IDS.EXPORT_CSV_BTN);
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', handleExportCsv);
+  }
+
+  const exportMdBtn = getElement(DOM_IDS.EXPORT_MD_BTN);
+  if (exportMdBtn) {
+    exportMdBtn.addEventListener('click', handleExportMarkdown);
+  }
+
+  // Import JSON
+  const importJson = getElement(DOM_IDS.IMPORT_JSON);
+  if (importJson) {
+    importJson.addEventListener('change', handleImportJson);
+  }
+
+  // Table action delegation
+  const tableBody = getElement('bug-table-body');
+  if (tableBody) {
+    tableBody.addEventListener('click', handleTableAction);
+  }
+
+  // Canned responses import
+  const importCannedMd = getElement(DOM_IDS.IMPORT_CANNED_MD);
+  if (importCannedMd) {
+    importCannedMd.addEventListener('change', handleImportCannedMd);
+  }
+
+  // Canned responses category filter
+  const cannedCategoryFilter = getElement(DOM_IDS.CANNED_CATEGORY_FILTER);
+  if (cannedCategoryFilter) {
+    cannedCategoryFilter.addEventListener('change', handleCannedCategoryFilter);
+  }
+
+  // Canned responses list actions (delegation)
+  const cannedList = getElement(DOM_IDS.CANNED_RESPONSES_LIST);
+  if (cannedList) {
+    cannedList.addEventListener('click', handleCannedResponseAction);
+  }
+
+  // Canned response editor
+  const newResponseBtn = getElement(DOM_IDS.NEW_RESPONSE_BTN);
+  if (newResponseBtn) {
+    newResponseBtn.addEventListener('click', handleNewResponse);
+  }
+
+  const exportCannedMdBtn = getElement(DOM_IDS.EXPORT_CANNED_MD_BTN);
+  if (exportCannedMdBtn) {
+    exportCannedMdBtn.addEventListener('click', handleExportCannedMd);
+  }
+
+  const closeCannedEditorBtn = getElement(DOM_IDS.CLOSE_CANNED_EDITOR_BTN);
+  if (closeCannedEditorBtn) {
+    closeCannedEditorBtn.addEventListener('click', handleCloseCannedEditor);
+  }
+
+  const cancelCannedEditorBtn = getElement(DOM_IDS.CANCEL_CANNED_EDITOR_BTN);
+  if (cancelCannedEditorBtn) {
+    cancelCannedEditorBtn.addEventListener('click', handleCloseCannedEditor);
+  }
+
+  const saveCannedEditorBtn = getElement(DOM_IDS.SAVE_CANNED_EDITOR_BTN);
+  if (saveCannedEditorBtn) {
+    saveCannedEditorBtn.addEventListener('click', handleSaveCannedResponse);
+  }
+
+  // Close canned editor on backdrop click
+  const cannedEditorModal = getElement(DOM_IDS.CANNED_EDITOR_MODAL);
+  if (cannedEditorModal) {
+    cannedEditorModal.addEventListener('click', (e) => {
+      if (e.target === cannedEditorModal) {
+        handleCloseCannedEditor();
+      }
+    });
+  }
+
+  // Response composer modal events
+  const closeComposerBtn = getElement(DOM_IDS.CLOSE_COMPOSER_BTN);
+  if (closeComposerBtn) {
+    closeComposerBtn.addEventListener('click', handleCloseComposer);
+  }
+
+  const cannedResponseSelect = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+  if (cannedResponseSelect) {
+    cannedResponseSelect.addEventListener('change', handleCannedResponseSelect);
+  }
+
+  // Response body textarea - update AI Customize button state on input
+  const responseBody = getElement(DOM_IDS.RESPONSE_BODY);
+  if (responseBody) {
+    responseBody.addEventListener('input', updateAiCustomizeButtonState);
+  }
+
+  const copyResponseBtn = getElement(DOM_IDS.COPY_RESPONSE_BTN);
+  if (copyResponseBtn) {
+    copyResponseBtn.addEventListener('click', handleCopyResponse);
+  }
+
+  const postResponseBtn = getElement(DOM_IDS.POST_RESPONSE_BTN);
+  if (postResponseBtn) {
+    postResponseBtn.addEventListener('click', handlePostResponse);
+  }
+
+  const aiCustomizeBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
+  if (aiCustomizeBtn) {
+    aiCustomizeBtn.addEventListener('click', handleAiCustomize);
+  }
+
+  // Custom instruction input - handle Enter key to trigger AI Customize
+  const refineInstruction = getElement(DOM_IDS.REFINE_INSTRUCTION);
+  if (refineInstruction) {
+    refineInstruction.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAiCustomize();
+      }
+    });
+  }
+
+  // Refine chips (delegation)
+  const refineChips = document.querySelector('.refine-chips');
+  if (refineChips) {
+    refineChips.addEventListener('click', handleRefineChipClick);
+  }
+
+  // Undo response button
+  const undoBtn = getElement(DOM_IDS.UNDO_RESPONSE_BTN);
+  if (undoBtn) {
+    undoBtn.addEventListener('click', handleUndo);
+  }
+
+  // Close modal on backdrop click
+  const composerModal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  if (composerModal) {
+    composerModal.addEventListener('click', (e) => {
+      if (e.target === composerModal) {
+        handleCloseComposer();
+      }
+    });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleKeyboardShortcuts);
+
+  // AI Logs
+  const refreshLogsBtn = getElement(DOM_IDS.REFRESH_LOGS_BTN);
+  if (refreshLogsBtn) {
+    refreshLogsBtn.addEventListener('click', refreshAiLogsUI);
+  }
+
+  const downloadLogsBtn = getElement(DOM_IDS.DOWNLOAD_LOGS_BTN);
+  if (downloadLogsBtn) {
+    downloadLogsBtn.addEventListener('click', handleDownloadLogs);
+  }
+
+  const clearLogsBtn = getElement(DOM_IDS.CLEAR_LOGS_BTN);
+  if (clearLogsBtn) {
+    clearLogsBtn.addEventListener('click', handleClearLogs);
+  }
+
+  // Initialize AI logs display
+  refreshAiLogsUI();
+}
+
+/**
+ * Handle keyboard shortcuts for the composer.
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleKeyboardShortcuts(event) {
+  const composerModal = getElement(DOM_IDS.RESPONSE_COMPOSER_MODAL);
+  const isComposerOpen = composerModal && !composerModal.hidden;
+
+  // Escape - close modal
+  if (event.key === 'Escape' && isComposerOpen) {
+    event.preventDefault();
+    handleCloseComposer();
+    return;
+  }
+
+  // Only handle other shortcuts if composer is open
+  if (!isComposerOpen) return;
+
+  // Ctrl+Enter - Copy to clipboard
+  if (event.ctrlKey && !event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    handleCopyResponse();
+    return;
+  }
+
+  // Ctrl+Shift+Enter - Post to Bugzilla
+  if (event.ctrlKey && event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    handlePostResponse();
+    return;
+  }
+
+  // Ctrl+R - Focus refine input
+  if (event.ctrlKey && (event.key === 'r' || event.key === 'R')) {
+    event.preventDefault();
+    const refineInput = getElement(DOM_IDS.REFINE_INSTRUCTION);
+    if (refineInput) {
+      refineInput.focus();
+    }
+    return;
+  }
+}
+
+/**
+ * Handle load bugs button click.
+ */
+export async function handleLoadClick() {
+  const input = getElement(DOM_IDS.BUG_INPUT);
+  if (!input) return;
+
+  const value = input.value.trim();
+  if (!value) {
+    ui.showInfo('Please enter bug IDs or a Bugzilla URL');
+    return;
+  }
+
+  try {
+    await loadBugs(value);
+  } catch (error) {
+    // Error already shown by loadBugs
+    console.error('[app] Load failed:', error);
+  }
+}
+
+/**
+ * Load bugs from the given input (IDs, REST URL, or buglist.cgi URL).
+ * @param {string} input - User input containing bug IDs or URL
+ * @returns {Promise<Object[]>} Array of loaded bug objects
+ */
+export async function loadBugs(input) {
+  const parsed = bugzilla.parseInputString(input);
+
+  // Handle empty input
+  if (parsed.type === 'ids' && parsed.ids.length === 0) {
+    return [];
+  }
+
+  ui.setLoading(true, 'Loading bugs...');
+
+  try {
+    let bugs = [];
+    const cfg = config.getConfig();
+
+    if (parsed.type === 'ids') {
+      bugs = await bugzilla.loadBugsByIds(parsed.ids);
+    } else if (parsed.type === 'rest') {
+      bugs = await bugzilla.loadBugsByRestUrl(parsed.url);
+    } else if (parsed.type === 'buglist') {
+      const restUrl = bugzilla.parseBuglistUrl(parsed.url);
+      if (!restUrl) {
+        throw new Error('Could not parse buglist.cgi URL. Try using a REST URL instead.');
+      }
+      bugs = await bugzilla.loadBugsByRestUrl(restUrl);
+    }
+
+    // Store loaded bugs
+    loadedBugs = bugs;
+
+    // Render table
+    ui.renderBugTable(bugs, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls with available tags
+    const availableTags = collectAvailableTags(bugs);
+    ui.updateFilterControls(availableTags, {});
+
+    return bugs;
+  } catch (error) {
+    ui.showError(error.message, {});
+    throw error;
+  } finally {
+    ui.setLoading(false);
+  }
+}
+
+/**
+ * Process a single bug (compute tags, optionally fetch details).
+ * @param {Object} bug - Bug object to process
+ * @param {Object} [options] - Processing options
+ * @param {boolean} [options.fetchDetails] - Whether to fetch attachments and comments
+ * @param {boolean} [options.runAi] - Whether to run AI classification
+ * @returns {Promise<Object>} Processed bug with tags
+ */
+export async function processBug(bug, options = {}) {
+  const processed = { ...bug };
+
+  // Clear previous processing state to avoid stale data
+  delete processed.aiError;
+  delete processed.aiSummary;
+  delete processed.aiAttempted;
+  delete processed.hasStrSuggested;
+  delete processed.aiSuggestedSeverity;
+  delete processed.aiSuggestedPriority;
+  delete processed.aiSuggestedActions;
+  delete processed.aiTriageReasoning;
+  delete processed.aiSuggestedCannedId;
+  delete processed.aiDraftResponse;
+  delete processed.generatedTestPageUrl;
+  delete processed.generatedTestPageReason;
+
+  // Ensure tags array exists
+  if (!processed.tags) {
+    processed.tags = [];
+  }
+
+  // Fetch details if requested
+  if (options.fetchDetails) {
+    try {
+      processed.attachments = await bugzilla.fetchAttachments(bug.id);
+    } catch (error) {
+      console.warn('[app] Failed to fetch attachments:', error);
+      processed.attachments = [];
+    }
+
+    try {
+      processed.comments = await bugzilla.fetchComments(bug.id);
+    } catch (error) {
+      console.warn('[app] Failed to fetch comments:', error);
+      processed.comments = [];
+    }
+  }
+
+  // Compute heuristic tags
+  processed.tags = tags.computeHeuristicTags(processed);
+
+  // Run AI classification if configured and requested
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
+  };
+
+  if (options.runAi && ai.isProviderConfigured(aiConfig)) {
+    processed.aiAttempted = true;
+    try {
+      // Get canned responses for AI suggestion during classification
+      const allCannedResponses = cannedResponses.getAll();
+      const aiResult = await ai.classifyBug(processed, aiConfig, { cannedResponses: allCannedResponses });
+
+      // Check if we got an actual result
+      if (!aiResult || (!aiResult.summary && !aiResult.ai_detected_str && !aiResult.ai_detected_test_attached)) {
+        processed.aiError = 'AI returned empty result - check API key and provider configuration';
+      } else {
+        // Merge AI tags with heuristic tags (enforces semantic rules)
+        processed.tags = tags.mergeAiTags(processed.tags, aiResult);
+
+        // Store AI summary
+        processed.aiSummary = aiResult.summary;
+
+        // Store triage suggestions from AI
+        processed.aiSuggestedSeverity = aiResult.suggested_severity || '--';
+        processed.aiSuggestedPriority = aiResult.suggested_priority || '--';
+        processed.aiSuggestedActions = aiResult.suggested_actions || [];
+        processed.aiTriageReasoning = aiResult.triage_reasoning || '';
+
+        // Store AI-suggested canned response
+        processed.aiSuggestedCannedId = aiResult.suggested_canned_id || '';
+        processed.aiDraftResponse = aiResult.draft_response || '';
+
+        // Auto-generate test page if no actual test FILE is attached
+        // Note: We only check for heuristic 'test-attached' (actual file attachment),
+        // NOT 'ai-detected-test-attached' (code snippets in description/comments).
+        // The purpose of test page generation is to turn those code snippets into runnable pages.
+        const hasTestFile = processed.tags.some(t => t.id === 'test-attached');
+        if (!hasTestFile) {
+          try {
+            const testPageResult = await ai.generateTestPage(processed, aiConfig);
+            if (testPageResult.can_generate && testPageResult.html_content) {
+              // Create blob URL for the test page
+              const blob = new Blob([testPageResult.html_content], { type: 'text/html' });
+              processed.generatedTestPageUrl = URL.createObjectURL(blob);
+              processed.generatedTestPageReason = testPageResult.reason || '';
+              processed.generatedTestPageHtml = testPageResult.html_content;
+            }
+          } catch (testPageError) {
+            console.warn('[app] Test page generation failed:', testPageError);
+            // Non-fatal - continue without test page
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[app] AI classification failed:', error);
+      // Store error so it can be displayed to user - parse HTML errors for cleaner message
+      processed.aiError = parseErrorMessage(error.message || String(error));
+      // Continue without AI tags - heuristics still available
+    }
+    // Always calculate hasStrSuggested, even if AI failed (heuristics still ran)
+    processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
+  } else if (options.runAi && cfg.aiProvider && cfg.aiProvider !== 'none') {
+    // AI was requested and a provider is selected, but not properly configured - give specific guidance
+    if (cfg.aiTransport === 'browser' && !cfg.aiApiKey) {
+      processed.aiError = `API key required for browser mode - add your ${cfg.aiProvider} API key in Settings, or switch to Backend transport`;
+    } else {
+      processed.aiError = 'AI provider not configured - check Settings';
+    }
+    processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
+  } else {
+    // Calculate hasStrSuggested with heuristic tags only
+    processed.hasStrSuggested = tags.calculateHasStrSuggested(processed.tags);
+  }
+
+  // Auto-suggest response based on tags
+  processed.suggestedResponseId = getSuggestedResponseId(processed);
+
+  return processed;
+}
+
+/**
+ * Determine which canned response to suggest based on bug tags.
+ * @param {Object} bug - Bug with computed tags
+ * @returns {string|null} Suggested response ID or null
+ */
+function getSuggestedResponseId(bug) {
+  const tagIds = (bug.tags || []).map((t) => t.id);
+
+  // If fuzzy-test-attached, suggest fuzzing-thanks
+  if (tagIds.includes('fuzzy-test-attached')) {
+    return 'fuzzing-thanks';
+  }
+
+  // If crashstack present and no AI-detected STR, suggest need-profile
+  if (tagIds.includes('crashstack') && !tagIds.includes('ai-detected-str')) {
+    return 'need-profile';
+  }
+
+  return null;
+}
+
+/**
+ * Process all loaded bugs.
+ * @param {Object[]} bugs - Array of bugs to process
+ * @param {Object} [options] - Processing options
+ * @returns {Promise<Object[]>} Array of processed bugs
+ */
+export async function processAllBugs(bugs, options = {}) {
+  if (!bugs || bugs.length === 0) {
+    return [];
+  }
+
+  ui.setLoading(true, `Processing ${bugs.length} bugs...`);
+
+  try {
+    const processed = [];
+    for (const bug of bugs) {
+      const result = await processBug(bug, options);
+      processed.push(result);
+    }
+
+    // Update stored bugs
+    loadedBugs = processed;
+
+    // Re-render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(processed, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls
+    const availableTags = collectAvailableTags(processed);
+    ui.updateFilterControls(availableTags, {});
+
+    // Check for AI errors and show appropriate notification
+    const aiErrors = processed.filter((b) => b.aiError);
+    if (aiErrors.length > 0) {
+      ui.showError(
+        `Processed ${processed.length} bugs, but AI failed for ${aiErrors.length}: ${aiErrors[0].aiError}`
+      );
+    } else {
+      ui.showSuccess(`Processed ${processed.length} bugs`);
+    }
+
+    return processed;
+  } finally {
+    ui.setLoading(false);
+    // Update AI logs UI
+    refreshAiLogsUI();
+  }
+}
+
+/**
+ * Get currently loaded bugs.
+ * @returns {Object[]} Array of loaded bug objects
+ */
+export function getLoadedBugs() {
+  return loadedBugs;
+}
+
+/**
+ * Clear all loaded bugs.
+ */
+export function clearBugs() {
+  loadedBugs = [];
+  ui.clearBugTable();
+}
+
+/**
+ * Collect all unique tag IDs from bugs.
+ * @param {Object[]} bugs - Array of bugs
+ * @returns {string[]} Array of unique tag IDs
+ */
+function collectAvailableTags(bugs) {
+  const tagSet = new Set();
+  bugs.forEach((bug) => {
+    if (bug.tags && Array.isArray(bug.tags)) {
+      bug.tags.forEach((tag) => {
+        tagSet.add(tag.id);
+      });
+    }
+  });
+  return Array.from(tagSet).sort();
+}
+
+/**
+ * Handle process all button click.
+ */
+async function handleProcessAllClick() {
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs loaded. Load bugs first.');
+    return;
+  }
+
+  try {
+    // Process all bugs - fetch details for heuristics, run AI if configured
+    await processAllBugs(loadedBugs, { fetchDetails: true, runAi: true });
+  } catch (error) {
+    ui.showError('Failed to process bugs: ' + error.message);
+  }
+}
+
+/**
+ * Handle apply filter button click.
+ */
+function handleApplyFilter() {
+  // Read from checkboxes when user clicks the button
+  currentFilter = getSelectedTags();
+  applyFilter();
+}
+
+/**
+ * Handle clear filter button click.
+ */
+function handleClearFilter() {
+  clearFilter();
+}
+
+/**
+ * Handle preset dropdown change.
+ */
+export function handlePresetChange() {
+  const presetSelect = getElement(DOM_IDS.FILTER_PRESET);
+  if (!presetSelect) return;
+
+  const presetId = presetSelect.value;
+  if (!presetId) {
+    // Empty selection - don't change anything
+    return;
+  }
+
+  const preset = filters.getPreset(presetId);
+  if (!preset) {
+    console.warn('[app] Unknown preset:', presetId);
+    return;
+  }
+
+  // Update current filter with preset values
+  currentFilter = {
+    include: [...preset.include],
+    exclude: [...preset.exclude],
+  };
+
+  // Update UI checkboxes to match preset
+  updateFilterCheckboxes();
+
+  // Apply the filter
+  applyFilter();
+}
+
+/**
+ * Update filter checkboxes to match current filter state.
+ */
+function updateFilterCheckboxes() {
+  const includeContainer = getElement(DOM_IDS.INCLUDE_TAGS);
+  const excludeContainer = getElement(DOM_IDS.EXCLUDE_TAGS);
+
+  if (includeContainer) {
+    const checkboxes = includeContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((cb) => {
+      cb.checked = currentFilter.include.includes(cb.value);
+    });
+  }
+
+  if (excludeContainer) {
+    const checkboxes = excludeContainer.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((cb) => {
+      cb.checked = currentFilter.exclude.includes(cb.value);
+    });
+  }
+}
+
+/**
+ * Get selected tags from checkbox containers.
+ * @returns {Object} Object with include and exclude arrays
+ */
+function getSelectedTags() {
+  const include = [];
+  const exclude = [];
+
+  const includeContainer = getElement(DOM_IDS.INCLUDE_TAGS);
+  if (includeContainer) {
+    const checked = includeContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checked.forEach((cb) => include.push(cb.value));
+  }
+
+  const excludeContainer = getElement(DOM_IDS.EXCLUDE_TAGS);
+  if (excludeContainer) {
+    const checked = excludeContainer.querySelectorAll('input[type="checkbox"]:checked');
+    checked.forEach((cb) => exclude.push(cb.value));
+  }
+
+  return { include, exclude };
+}
+
+/**
+ * Apply filter to loaded bugs and render.
+ * @param {Object} [filter] - Optional filter to apply. If not provided, uses currentFilter state.
+ * @param {string[]} [filter.include] - Tags to include
+ * @param {string[]} [filter.exclude] - Tags to exclude
+ */
+export function applyFilter(filter = null) {
+  // Use provided filter or current state
+  if (filter) {
+    currentFilter = filter;
+  }
+
+  // Filter bugs
+  const filteredBugs = filters.filterByTagDifference(
+    loadedBugs,
+    currentFilter.include,
+    currentFilter.exclude
+  );
+
+  // Render filtered results
+  const cfg = config.getConfig();
+  ui.renderBugTable(filteredBugs, { bugzillaHost: cfg.bugzillaHost });
+
+  // Update bug count
+  ui.updateBugCount(filteredBugs.length);
+
+  // Update filter controls UI
+  ui.updateFilterControls(collectAvailableTags(loadedBugs), currentFilter);
+}
+
+/**
+ * Clear filter and show all bugs.
+ */
+export function clearFilter() {
+  // Reset filter state
+  currentFilter = { include: [], exclude: [] };
+
+  // Reset preset dropdown
+  const presetSelect = getElement(DOM_IDS.FILTER_PRESET);
+  if (presetSelect) {
+    presetSelect.value = '';
+  }
+
+  // Uncheck all checkboxes
+  updateFilterCheckboxes();
+
+  // Render all bugs
+  const cfg = config.getConfig();
+  ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+  // Update bug count
+  ui.updateBugCount(loadedBugs.length);
+
+  // Update filter controls UI
+  ui.updateFilterControls(collectAvailableTags(loadedBugs), currentFilter);
+}
+
+/**
+ * Handle export JSON button click.
+ */
+function handleExportJson() {
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const metadata = {
+    bugzillaHost: cfg.bugzillaHost,
+    input: { bugCount: loadedBugs.length },
+    aiProvider: cfg.aiProvider,
+    aiModel: cfg.aiModel,
+    aiTransport: cfg.aiTransport,
+  };
+
+  const jsonContent = exports.exportJSON(loadedBugs, metadata);
+  const filename = exports.generateFilename('triage-export', 'json');
+
+  exports.downloadFile(jsonContent, filename, 'application/json');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
+}
+
+/**
+ * Handle export CSV button click.
+ */
+function handleExportCsv() {
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const csvContent = exports.exportCSV(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+  const filename = exports.generateFilename('triage-export', 'csv');
+
+  exports.downloadFile(csvContent, filename, 'text/csv');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
+}
+
+/**
+ * Handle export Markdown button click.
+ */
+function handleExportMarkdown() {
+  if (loadedBugs.length === 0) {
+    ui.showInfo('No bugs to export');
+    return;
+  }
+
+  const cfg = config.getConfig();
+  const mdContent = exports.exportMarkdown(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+  const filename = exports.generateFilename('triage-export', 'md');
+
+  exports.downloadFile(mdContent, filename, 'text/markdown');
+  ui.showSuccess(`Exported ${loadedBugs.length} bugs to ${filename}`);
+}
+
+/**
+ * Handle import JSON file change.
+ * @param {Event} event - File input change event
+ */
+async function handleImportJson(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const result = exports.importJSON(text);
+
+    if (result.errors && result.errors.length > 0) {
+      ui.showError(`Import failed: ${result.errors.join(', ')}`);
+      return;
+    }
+
+    if (!result.bugs || result.bugs.length === 0) {
+      ui.showInfo('No bugs found in import file');
+      return;
+    }
+
+    // Update loaded bugs
+    loadedBugs = result.bugs;
+
+    // Render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+    // Update filter controls
+    const availableTags = collectAvailableTags(loadedBugs);
+    ui.updateFilterControls(availableTags, {});
+
+    ui.showSuccess(`Imported ${result.bugs.length} bugs from ${file.name}`);
+  } catch (err) {
+    ui.showError(`Failed to import: ${err.message}`);
+  }
+
+  // Reset file input
+  event.target.value = '';
+}
+
+/**
+ * Handle table action button clicks (delegation).
+ * @param {Event} event - Click event
+ */
+function handleTableAction(event) {
+  const btn = event.target.closest('button[data-action]');
+  if (!btn) return;
+
+  const action = btn.dataset.action;
+  const bugId = btn.dataset.bugId;
+
+  if (action === 'process') {
+    handleProcessSingleBug(bugId);
+  } else if (action === 'toggle-summary') {
+    handleToggleSummary(bugId);
+  } else if (action === 'compose') {
+    handleComposeBug(bugId);
+  } else if (action === 'set-has-str') {
+    handleSetHasStr(bugId);
+  } else if (action === 'download-test') {
+    handleDownloadTestPage(bugId);
+  }
+}
+
+/**
+ * Handle process single bug action.
+ * @param {string} bugId - Bug ID
+ */
+async function handleProcessSingleBug(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  ui.setLoading(true, `Processing bug ${bugId}...`);
+
+  try {
+    const processed = await processBug(bug, { fetchDetails: true, runAi: true });
+
+    // Update in loaded bugs array
+    const index = loadedBugs.findIndex((b) => String(b.id) === String(bugId));
+    if (index !== -1) {
+      loadedBugs[index] = processed;
+    }
+
+    // Re-render table
+    const cfg = config.getConfig();
+    ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+    // Show appropriate notification based on AI result
+    if (processed.aiError) {
+      ui.showError(`Processed bug ${bugId}, but AI failed: ${processed.aiError}`);
+    } else {
+      ui.showSuccess(`Processed bug ${bugId}`);
+
+      // Auto-expand AI summary with triage info if available
+      if (processed.aiSummary) {
+        const triageInfo = {
+          severity: processed.aiSuggestedSeverity,
+          priority: processed.aiSuggestedPriority,
+          actions: processed.aiSuggestedActions,
+          reasoning: processed.aiTriageReasoning,
+        };
+        ui.showSummaryRow(bugId, processed.aiSummary, triageInfo);
+      }
+    }
+  } catch (error) {
+    ui.showError(`Failed to process bug ${bugId}: ${error.message}`);
+  } finally {
+    ui.setLoading(false);
+    // Update AI logs UI
+    refreshAiLogsUI();
+  }
+}
+
+/**
+ * Handle toggle summary action.
+ * @param {string} bugId - Bug ID
+ */
+function handleToggleSummary(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) return;
+
+  // Use AI summary if available, otherwise placeholder
+  const summary = bug.aiSummary || 'No AI summary available. Click "Process" to generate one.';
+  ui.toggleSummary(bugId, summary);
+}
+
+/**
+ * Handle set Has STR action.
+ * @param {string} bugId - Bug ID
+ */
+async function handleSetHasStr(bugId) {
+  const cfg = config.getConfig();
+
+  if (!cfg.bugzillaApiKey) {
+    ui.showError('Bugzilla API key required. Please configure in Settings.');
+    return;
+  }
+
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  // Check if already has STR
+  if (bug.cfHasStr === 'yes') {
+    ui.showInfo(`Bug ${bugId} already has "Has STR" set`);
+    return;
+  }
+
+  ui.setLoading(true, `Setting Has STR on bug ${bugId}...`);
+
+  try {
+    const success = await bugzilla.setHasStr(bugId, cfg.bugzillaApiKey);
+
+    if (success) {
+      // Update local bug state
+      bug.cfHasStr = 'yes';
+
+      // Remove hasStrSuggested since it's now set
+      bug.hasStrSuggested = false;
+
+      // Update the has-str tag if not present
+      const hasStrTag = bug.tags?.find((t) => t.id === 'has-str');
+      if (!hasStrTag) {
+        bug.tags = bug.tags || [];
+        bug.tags.push({
+          id: 'has-str',
+          label: 'Has STR',
+          source: 'field',
+          evidence: 'cf_has_str = yes (set via triage wizard)',
+        });
+      }
+
+      // Re-render the table to reflect changes
+      ui.renderBugTable(loadedBugs, { bugzillaHost: cfg.bugzillaHost });
+
+      ui.showSuccess(`Set "Has STR" on bug ${bugId}`);
+    } else {
+      ui.showError(`Failed to set "Has STR" on bug ${bugId}`);
+    }
+  } catch (error) {
+    ui.showError(`Error setting "Has STR": ${error.message}`);
+  } finally {
+    ui.setLoading(false);
+  }
+}
+
+/**
+ * Handle download test page action.
+ * Downloads the already-generated test page HTML file.
+ * @param {string} bugId - Bug ID
+ */
+function handleDownloadTestPage(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  if (!bug.generatedTestPageHtml) {
+    ui.showError('No test page available for this bug');
+    return;
+  }
+
+  // Trigger download
+  ui.downloadTestPage(bug.generatedTestPageHtml, bugId);
+  ui.showSuccess(`Downloaded test page for bug ${bugId}`);
+}
+
+/**
+ * Handle compose button click for a bug.
+ * @param {string} bugId - Bug ID
+ */
+function handleComposeBug(bugId) {
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError(`Bug ${bugId} not found`);
+    return;
+  }
+
+  // Clear history from any previous session
+  clearResponseHistory();
+
+  const responses = cannedResponses.getAll();
+  ui.openResponseComposer(bug, responses);
+
+  // Update AI Customize button state based on pre-filled content
+  updateAiCustomizeButtonState();
+}
+
+/**
+ * Handle close composer button click.
+ */
+export function handleCloseComposer() {
+  clearResponseHistory();
+  ui.closeResponseComposer();
+}
+
+/**
+ * Clear response history and update UI.
+ */
+function clearResponseHistory() {
+  responseHistory = [];
+  updateHistoryUI();
+}
+
+/**
+ * Push current response to history before modification.
+ * @param {string} response - Current response text
+ */
+function pushToHistory(response) {
+  if (!response || !response.trim()) return;
+  responseHistory.push(response);
+  // Limit history size
+  if (responseHistory.length > MAX_HISTORY_SIZE) {
+    responseHistory.shift();
+  }
+  updateHistoryUI();
+}
+
+/**
+ * Pop and return the last response from history.
+ * @returns {string|null}
+ */
+function popFromHistory() {
+  if (responseHistory.length === 0) return null;
+  const response = responseHistory.pop();
+  updateHistoryUI();
+  return response;
+}
+
+/**
+ * Update the history UI (undo button state and indicator).
+ */
+function updateHistoryUI() {
+  const undoBtn = getElement(DOM_IDS.UNDO_RESPONSE_BTN);
+  const indicator = getElement(DOM_IDS.HISTORY_INDICATOR);
+  const hasHistory = responseHistory.length > 0;
+
+  if (undoBtn) {
+    undoBtn.disabled = !hasHistory;
+    undoBtn.title = hasHistory
+      ? `Undo to previous version (${responseHistory.length} in history)`
+      : 'No history available';
+  }
+
+  if (indicator) {
+    if (hasHistory) {
+      indicator.textContent = `${responseHistory.length} version${responseHistory.length > 1 ? 's' : ''} in history`;
+      indicator.hidden = false;
+    } else {
+      indicator.hidden = true;
+    }
+  }
+}
+
+/**
+ * Handle undo button click.
+ * Restores the previous response from history.
+ */
+export function handleUndo() {
+  const previousResponse = popFromHistory();
+  if (previousResponse) {
+    ui.setComposerResponseBody(previousResponse);
+    ui.showInfo('Restored previous version');
+  } else {
+    ui.showInfo('No more history to undo');
+  }
+}
+
+/**
+ * Handle canned response select change.
+ * @param {Event} event - Change event
+ */
+export function handleCannedResponseSelect(event) {
+  const responseId = event.target.value;
+  // Clear history when selecting a new canned response
+  clearResponseHistory();
+  if (!responseId) {
+    ui.setComposerResponseBody('');
+    updateAiCustomizeButtonState();
+    return;
+  }
+
+  const response = cannedResponses.getById(responseId);
+  if (response) {
+    ui.setComposerResponseBody(response.bodyTemplate);
+  }
+  updateAiCustomizeButtonState();
+}
+
+/**
+ * Handle copy response button click.
+ */
+export async function handleCopyResponse() {
+  const body = ui.getComposerResponseBody();
+  if (!body) {
+    ui.showInfo('No response text to copy');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(body);
+    ui.showSuccess('Copied to clipboard');
+  } catch (err) {
+    ui.showError('Failed to copy to clipboard');
+  }
+}
+
+/**
+ * Handle post response button click.
+ */
+export async function handlePostResponse() {
+  const bugId = ui.getComposerBugId();
+  const body = ui.getComposerResponseBody();
+
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  if (!body.trim()) {
+    ui.showInfo('Please enter a response');
+    return;
+  }
+
+  const cfg = config.getConfig();
+
+  if (!cfg.bugzillaApiKey) {
+    ui.showError('Bugzilla API key required. Please configure in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const postBtn = getElement(DOM_IDS.POST_RESPONSE_BTN);
+  if (postBtn) {
+    postBtn.disabled = true;
+    postBtn.textContent = 'Posting...';
+  }
+
+  try {
+    const success = await bugzilla.postComment(bugId, body.trim(), cfg.bugzillaApiKey);
+
+    if (success) {
+      ui.showSuccess(`Comment posted to bug ${bugId}`);
+
+      // Close the composer modal
+      ui.closeResponseComposer();
+
+      // Update local bug state to reflect new comment
+      const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+      if (bug) {
+        // Add a placeholder comment (actual content will be fetched on next load)
+        bug.comments = bug.comments || [];
+        bug.comments.push({
+          text: body.trim(),
+          author: 'You',
+          creation_time: new Date().toISOString(),
+          isDescription: false,
+        });
+      }
+    } else {
+      ui.showError(`Failed to post comment to bug ${bugId}`);
+    }
+  } catch (error) {
+    ui.showError(`Error posting comment: ${error.message}`);
+    console.error('[app] Post comment error:', error);
+  } finally {
+    if (postBtn) {
+      postBtn.disabled = false;
+      postBtn.textContent = 'Post to Bugzilla';
+    }
+  }
+}
+
+/**
+ * Update the AI Customize button enabled/disabled state based on response body content.
+ */
+function updateAiCustomizeButtonState() {
+  const aiBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
+  if (!aiBtn) return;
+
+  const responseBody = ui.getComposerResponseBody();
+  const hasContent = responseBody && responseBody.trim().length > 0;
+
+  aiBtn.disabled = !hasContent;
+  aiBtn.title = hasContent ? 'Customize response with AI' : 'Enter or select a response first';
+}
+
+/**
+ * Handle AI customize button click.
+ * Customizes whatever text is in the response body for the specific bug.
+ * Incorporates selected chip options and custom instructions.
+ */
+export async function handleAiCustomize() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  // Get the current response text
+  const currentResponse = ui.getComposerResponseBody();
+  if (!currentResponse || !currentResponse.trim()) {
+    ui.showInfo('Please enter or select a response to customize');
+    return;
+  }
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const aiBtn = getElement(DOM_IDS.AI_CUSTOMIZE_BTN);
+  if (aiBtn) {
+    aiBtn.disabled = true;
+    aiBtn.textContent = 'Customizing...';
+  }
+
+  // Save current response to history before customizing
+  pushToHistory(currentResponse);
+
+  try {
+    // Get selected canned response for context (if any)
+    const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+    const responseId = select?.value;
+    const context = {};
+    if (responseId) {
+      context.selectedCannedResponse = cannedResponses.getById(responseId);
+    }
+
+    // Build instruction combining base customization with any selected options
+    const baseInstruction = 'Customize this response for this specific bug. Fill in placeholders, add relevant details from the bug report, and ensure the tone is professional and helpful.';
+
+    // Get selected chip instructions and custom text input
+    const chipInstructions = ui.getSelectedRefineChips();
+    const textInstruction = ui.getRefineInstruction();
+
+    // Combine all instructions
+    const allInstructions = [baseInstruction, ...chipInstructions];
+    if (textInstruction.trim()) {
+      allInstructions.push(textInstruction.trim());
+    }
+    const instruction = allInstructions.join('. ');
+
+    // Use refine API with combined instruction
+    const result = await ai.refineResponse(
+      bug,
+      currentResponse,
+      instruction,
+      context,
+      aiConfig
+    );
+
+    if (result.refined_response) {
+      ui.setComposerResponseBody(result.refined_response);
+      ui.clearRefineInstruction();
+      ui.clearSelectedRefineChips();
+
+      // Show what was applied
+      const appliedOptions = chipInstructions.length > 0 || textInstruction.trim();
+      if (appliedOptions && result.changes_made && result.changes_made.length > 0) {
+        ui.showSuccess(`Customized: ${result.changes_made.join(', ')}`);
+      } else {
+        ui.showSuccess('Response customized');
+      }
+    } else {
+      ui.showInfo('No customized response returned');
+    }
+  } catch (err) {
+    ui.showError(`AI customization failed: ${err.message}`);
+    console.error('[app] AI customize error:', err);
+  } finally {
+    if (aiBtn) {
+      aiBtn.disabled = false;
+      aiBtn.textContent = 'AI Customize';
+    }
+    // Re-check if button should be enabled based on current text
+    updateAiCustomizeButtonState();
+    // Update AI logs UI
+    refreshAiLogsUI();
+  }
+}
+
+/**
+ * Handle refine button click.
+ * Refines the current response based on user instruction.
+ */
+export async function handleRefine() {
+  const bugId = ui.getComposerBugId();
+  if (!bugId) {
+    ui.showError('No bug selected');
+    return;
+  }
+
+  const currentResponse = ui.getComposerResponseBody();
+  if (!currentResponse.trim()) {
+    ui.showInfo('No response to refine. Generate or enter a response first.');
+    return;
+  }
+
+  // Combine text input with selected chip instructions
+  const textInstruction = ui.getRefineInstruction();
+  const chipInstructions = ui.getSelectedRefineChips();
+  const allInstructions = [...chipInstructions];
+  if (textInstruction.trim()) {
+    allInstructions.push(textInstruction.trim());
+  }
+
+  if (allInstructions.length === 0) {
+    ui.showInfo('Please enter a refinement instruction or select options');
+    return;
+  }
+
+  // Join multiple instructions
+  const instruction = allInstructions.join('. ');
+
+  // Get the bug
+  const bug = loadedBugs.find((b) => String(b.id) === String(bugId));
+  if (!bug) {
+    ui.showError('Bug not found');
+    return;
+  }
+
+  // Get AI config
+  const cfg = config.getConfig();
+  const aiConfig = {
+    provider: cfg.aiProvider,
+    transport: cfg.aiTransport || 'browser',
+    apiKey: cfg.aiApiKey,
+    model: cfg.aiModel,
+    backendUrl: cfg.backendUrl,
+  };
+
+  if (!ai.isProviderConfigured(aiConfig)) {
+    ui.showInfo('AI provider not configured. Please set up in Settings.');
+    return;
+  }
+
+  // Disable button and show loading
+  const refineBtn = getElement(DOM_IDS.REFINE_BTN);
+  if (refineBtn) {
+    refineBtn.disabled = true;
+    refineBtn.textContent = 'Refining...';
+  }
+
+  // Save current response to history before refining
+  pushToHistory(currentResponse);
+
+  try {
+    // Check if a canned response is selected for context
+    const select = getElement(DOM_IDS.CANNED_RESPONSE_SELECT);
+    const responseId = select?.value;
+    const context = {};
+    if (responseId) {
+      context.selectedCannedResponse = cannedResponses.getById(responseId);
+    }
+
+    const result = await ai.refineResponse(
+      bug,
+      currentResponse,
+      instruction,
+      context,
+      aiConfig
+    );
+
+    if (result.refined_response) {
+      ui.setComposerResponseBody(result.refined_response);
+      ui.clearRefineInstruction();
+      ui.clearSelectedRefineChips();
+
+      if (result.changes_made && result.changes_made.length > 0) {
+        ui.showSuccess(`Refined: ${result.changes_made.join(', ')}`);
+      } else {
+        ui.showSuccess('Response refined');
+      }
+    }
+  } catch (err) {
+    ui.showError(`AI refinement failed: ${err.message}`);
+    console.error('[app] AI refine error:', err);
+  } finally {
+    if (refineBtn) {
+      refineBtn.disabled = false;
+      refineBtn.textContent = 'Refine';
+    }
+    // Update AI logs UI
+    refreshAiLogsUI();
+  }
+}
+
+/**
+ * Handle click on a refine chip.
+ * @param {Event} event - Click event
+ */
+export function handleRefineChipClick(event) {
+  const chip = event.target.closest('.chip');
+  if (!chip) return;
+
+  const instruction = chip.dataset.instruction;
+  if (!instruction) return;
+
+  // Toggle the selected state
+  chip.classList.toggle('selected');
+}
+
+/**
+ * Refresh the canned responses UI.
+ * @param {string} [categoryFilter] - Optional category to filter by
+ */
+export function refreshCannedResponsesUI(categoryFilter = '') {
+  let responses = cannedResponses.getAll();
+
+  // Filter by category if specified
+  if (categoryFilter) {
+    responses = cannedResponses.getByCategory(categoryFilter);
+  }
+
+  // Update the list
+  ui.renderCannedResponsesList(responses);
+
+  // Update category filter dropdown
+  const allResponses = cannedResponses.getAll();
+  const categories = ui.extractCategories(allResponses);
+  ui.updateCannedCategoryFilter(categories, categoryFilter);
+}
+
+/**
+ * Handle canned responses markdown import.
+ * @param {Event} event - Change event from file input
+ */
+export async function handleImportCannedMd(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const replaceCheckbox = getElement(DOM_IDS.IMPORT_REPLACE);
+  const replace = replaceCheckbox?.checked || false;
+
+  try {
+    const text = await file.text();
+    cannedResponses.importMarkdown(text, { replace });
+
+    ui.showSuccess(`Imported canned responses from ${file.name}`);
+    refreshCannedResponsesUI();
+  } catch (err) {
+    ui.showError(`Failed to import: ${err.message}`);
+  }
+
+  // Reset file input
+  event.target.value = '';
+}
+
+/**
+ * Handle canned responses category filter change.
+ * @param {Event} event - Change event from select
+ */
+export function handleCannedCategoryFilter(event) {
+  const category = event.target.value;
+  refreshCannedResponsesUI(category);
+}
+
+/**
+ * Handle actions on canned response cards (edit, copy, delete).
+ * @param {Event} event - Click event
+ */
+export async function handleCannedResponseAction(event) {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const responseId = button.dataset.responseId;
+
+  if (!responseId) return;
+
+  if (action === 'edit') {
+    const response = cannedResponses.getById(responseId);
+    if (response) {
+      ui.openCannedEditor(response);
+    }
+  } else if (action === 'copy') {
+    const response = cannedResponses.getById(responseId);
+    if (response) {
+      try {
+        await navigator.clipboard.writeText(response.bodyTemplate);
+        ui.showSuccess('Copied to clipboard');
+      } catch (err) {
+        ui.showError('Failed to copy to clipboard');
+      }
+    }
+  } else if (action === 'delete') {
+    const deleted = cannedResponses.deleteResponse(responseId);
+    if (deleted) {
+      ui.showSuccess('Deleted response');
+      refreshCannedResponsesUI();
+    }
+  }
+}
+
+/**
+ * Handle new response button click.
+ * Opens the canned response editor for creating a new response.
+ */
+export function handleNewResponse() {
+  ui.openCannedEditor(null);
+}
+
+/**
+ * Handle close canned editor button click.
+ */
+export function handleCloseCannedEditor() {
+  ui.closeCannedEditor();
+}
+
+/**
+ * Handle save canned response button click.
+ * Validates and saves the response from the editor form.
+ */
+export function handleSaveCannedResponse() {
+  const validation = ui.validateCannedEditorForm();
+  if (!validation.valid) {
+    ui.showError(validation.errors.join('. '));
+    return;
+  }
+
+  const formData = ui.getCannedEditorFormData();
+
+  // Generate ID from title if not provided
+  let responseId = formData.id;
+  if (!responseId) {
+    responseId = cannedResponses.slugify(formData.title);
+  }
+
+  // Check for duplicate ID when creating new
+  if (!formData.isEditing) {
+    const existing = cannedResponses.getById(responseId);
+    if (existing) {
+      ui.showError(`A response with ID "${responseId}" already exists`);
+      return;
+    }
+  }
+
+  // Build the response object
+  const response = {
+    id: responseId,
+    title: formData.title,
+    bodyTemplate: formData.bodyTemplate,
+    categories: formData.categories,
+  };
+
+  if (formData.description) {
+    response.description = formData.description;
+  }
+
+  // Save the response
+  cannedResponses.saveResponse(response);
+  ui.closeCannedEditor();
+  refreshCannedResponsesUI();
+  ui.showSuccess(formData.isEditing ? 'Response updated' : 'Response created');
+}
+
+/**
+ * Export canned responses to Markdown format.
+ */
+export function handleExportCannedMd() {
+  const responses = cannedResponses.getAll();
+  if (responses.length === 0) {
+    ui.showInfo('No canned responses to export');
+    return;
+  }
+
+  // Build Markdown
+  const lines = ['# Canned Responses', ''];
+
+  responses.forEach((response) => {
+    lines.push(`## ${response.title}`);
+    lines.push(`ID: ${response.id}`);
+    if (response.categories && response.categories.length > 0) {
+      lines.push(`Categories: ${response.categories.join(', ')}`);
+    }
+    if (response.description) {
+      lines.push(`Description: ${response.description}`);
+    }
+    lines.push('');
+    lines.push(response.bodyTemplate);
+    lines.push('');
+  });
+
+  const markdown = lines.join('\n');
+  const filename = exports.generateFilename('canned-responses', 'md');
+  exports.downloadFile(markdown, filename, 'text/markdown');
+  ui.showSuccess('Exported canned responses');
+}
+
+// ============================================================================
+// AI Logs UI Functions
+// ============================================================================
+
+/**
+ * Refresh the AI logs UI - update stats and log list.
+ */
+function refreshAiLogsUI() {
+  updateAiLogsStats();
+  renderAiLogsList();
+}
+
+/**
+ * Update the AI logs statistics display.
+ */
+function updateAiLogsStats() {
+  const statsContainer = getElement(DOM_IDS.AI_LOGS_STATS);
+  const countSpan = getElement(DOM_IDS.AI_LOGS_COUNT);
+
+  const stats = aiLogger.getStats();
+
+  if (countSpan) {
+    countSpan.textContent = stats.total > 0 ? `(${stats.total})` : '';
+  }
+
+  if (statsContainer) {
+    statsContainer.innerHTML = `
+      <span class="ai-logs-stat">
+        <span class="label">Total:</span>
+        <span class="value">${stats.total}</span>
+      </span>
+      <span class="ai-logs-stat success">
+        <span class="label">Success:</span>
+        <span class="value">${stats.successful}</span>
+      </span>
+      <span class="ai-logs-stat failed">
+        <span class="label">Failed:</span>
+        <span class="value">${stats.failed}</span>
+      </span>
+      <span class="ai-logs-stat">
+        <span class="label">Avg time:</span>
+        <span class="value">${stats.avgDurationMs}ms</span>
+      </span>
+    `;
+  }
+}
+
+/**
+ * Render the AI logs list.
+ */
+function renderAiLogsList() {
+  const listContainer = getElement(DOM_IDS.AI_LOGS_LIST);
+  if (!listContainer) return;
+
+  const logs = aiLogger.getAll();
+
+  if (logs.length === 0) {
+    listContainer.innerHTML = '<p class="empty-state">No AI interactions logged yet. AI logs will appear here as you use AI features.</p>';
+    return;
+  }
+
+  const html = logs.map((entry) => {
+    const statusClass = entry.error ? 'failed' : (entry.response ? 'success' : '');
+    const timestamp = new Date(entry.timestamp).toLocaleString();
+    const duration = entry.durationMs ? `${entry.durationMs}ms` : 'pending';
+
+    // Format request and response for display
+    const requestJson = JSON.stringify(entry.request, null, 2);
+    const responseJson = entry.response ? JSON.stringify(entry.response, null, 2) : 'null';
+
+    return `
+      <div class="ai-log-entry ${statusClass}">
+        <div class="ai-log-header">
+          <div class="ai-log-meta">
+            <span class="ai-log-task">${escapeHtml(entry.task)}</span>
+            <span class="ai-log-provider">${escapeHtml(entry.provider)}</span>
+            <span class="ai-log-transport">${escapeHtml(entry.transport)}</span>
+            ${entry.metadata?.bugId ? `<span class="ai-log-bug">Bug ${escapeHtml(entry.metadata.bugId)}</span>` : ''}
+          </div>
+          <div>
+            <span class="ai-log-timestamp">${escapeHtml(timestamp)}</span>
+            <span class="ai-log-duration">${escapeHtml(duration)}</span>
+          </div>
+        </div>
+        ${entry.error ? `<div class="ai-log-error">Error: ${escapeHtml(entry.error)}</div>` : ''}
+        <details class="ai-log-details">
+          <summary>View request/response</summary>
+          <div>
+            <strong>Request:</strong>
+            <pre>${escapeHtml(requestJson)}</pre>
+            <strong>Response:</strong>
+            <pre>${escapeHtml(responseJson)}</pre>
+          </div>
+        </details>
+      </div>
+    `;
+  }).join('');
+
+  listContainer.innerHTML = html;
+}
+
+/**
+ * Escape HTML to prevent XSS.
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/**
+ * Handle download logs button click.
+ */
+function handleDownloadLogs() {
+  const count = aiLogger.getCount();
+  if (count === 0) {
+    ui.showInfo('No logs to download');
+    return;
+  }
+  aiLogger.downloadLogs();
+  ui.showSuccess(`Downloaded ${count} log entries`);
+}
+
+/**
+ * Handle clear logs button click.
+ */
+function handleClearLogs() {
+  const count = aiLogger.getCount();
+  if (count === 0) {
+    ui.showInfo('No logs to clear');
+    return;
+  }
+  if (confirm(`Are you sure you want to clear ${count} log entries?`)) {
+    aiLogger.clear();
+    refreshAiLogsUI();
+    ui.showSuccess('AI logs cleared');
+  }
+}
+
+// Auto-initialize when DOM is ready
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', init);
+}
+
+console.log('[app] Module loaded');

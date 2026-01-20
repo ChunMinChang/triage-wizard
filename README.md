@@ -1,154 +1,315 @@
-# Bugzilla Bug Triage Helper (POC)
+# Mozilla Bugzilla Triage Helper
 
-A client-first web app to ingest Mozilla Bugzilla bugs, analyze them (heuristics + optional AI), apply triage tags, generate brief summaries, and recommend/craft canned responses to request additional info from reporters.
+A web app to help Mozilla developers triage Bugzilla bugs efficiently. Load bugs, analyze them with heuristics and AI, filter actionable items, and draft responses.
 
-This repo is designed to be:
-- **Framework-free** (pure HTML/CSS/JS)
-- **Claude Code friendly** (clear module boundaries, CLAUDE.md guidance)
-- **AI-provider flexible** (Gemini + Claude prioritized; OpenAI supported)
-- **Low-friction** for Mozilla engineers triaging small bug sets (≤ 20 bugs typical)
+## Features
 
----
-
-## Goals
-
-### Primary
-- Load a bug list (IDs, REST query, or `buglist.cgi` URL), fetch bug data via Bugzilla REST, and display bugs in a table.
-- Apply tags to each bug using:
-  - Bugzilla metadata
-  - Attachment analysis
-  - Text heuristics
-  - Optional AI classification
-- Provide **filters** (tags and tag-difference) to surface actionable “low hanging fruit” bugs.
-
-### Secondary
-- Provide a **brief AI summary** per bug (expandable inline).
-- Provide **canned response tooling**:
-  - Select a canned response and optionally AI-customize it.
-  - Or let AI suggest a best canned response and generate a draft reply.
+- **Bug Loading**: Load bugs by ID, REST URL, or `buglist.cgi` URL
+- **Smart Tagging**: Automatic detection of STR, test attachments, crash stacks, and fuzzing testcases
+- **AI Analysis**: Optional AI-powered classification, summaries, and response drafting (Gemini, Claude)
+- **Canned Responses**: Maintain a library of response templates, customize with AI
+- **Filtering**: Filter bugs by tags to surface actionable items
+- **Export**: Download results as JSON, CSV, or Markdown
+- **Test Page Generation**: Auto-generate HTML test pages from bug code snippets
 
 ---
 
-## What this tool detects (tags)
+## Quick Start
 
-Required tags:
-1. **Has STR** — based on Bugzilla field `cf_has_str`.
-2. **test-attached** — based on Bugzilla keywords/flags and attachments (non-AI only).
-3. **fuzzy-test-attached** — fuzzing testcase signals (heuristics and/or AI).
-4. **crashstack** — crash/sanitizer stack traces (field + heuristics and/or AI).
-5. **AI-detected STR** — AI finds clear reproduction steps in text.
-6. **AI-detected test-attached** — AI finds testcase referenced/linked in text.
-
-Important semantic rule:
-- **`test-attached` is never set from AI**.
-- **`AI-detected test-attached` is set only from AI**.
-
-Has STR suggestion rule:
-- If any of `test-attached`, `fuzzy-test-attached`, `AI-detected STR`, or `AI-detected test-attached` applies **but** Bugzilla’s `cf_has_str` is not set, the UI should suggest setting `Has STR` on Bugzilla and provide a one-click action.
-
----
-
-## Quick start (frontend only)
-
-### 1) Run a static server
-From `frontend/`:
+### Option 1: Frontend Only (Simplest)
 
 ```bash
+cd frontend
 python -m http.server 8000
 ```
 
-Then open:
-- http://localhost:8000
+Open http://localhost:8000 in your browser.
 
-> A static server is recommended because `fetch('./canned-responses.md')` and module imports work more reliably than `file://`.
-
-### 2) Configure keys (POC)
-In the app’s **Settings**:
+**Configure in Settings:**
 - Bugzilla host: `https://bugzilla.mozilla.org` (default)
-- Bugzilla API key: optional for reads; required for write actions
-- AI provider:
-  - **Gemini**: browser mode supported (preferred)
-  - **Claude**: browser mode supported for POC; or backend mode (recommended)
-  - **OpenAI**: backend mode recommended
+- AI provider: Select Gemini or Claude
+- API key: Enter your API key for AI features
+- Transport: "Browser" (direct API calls)
 
----
+### Option 2: With Backend (Recommended for Claude CLI)
 
-## Optional: Run the Rust backend proxy
+The backend is needed for:
+- Using **Claude Code CLI** authentication (no API key needed in browser)
+- Bypassing CORS restrictions
+- Keeping API keys server-side
 
-The backend is only needed if:
-- an AI provider call fails due to CORS, OR
-- Bugzilla write calls (set `cf_has_str`, post comments) fail due to CORS, OR
-- you want to use **Claude Code CLI** authentication (`CLAUDE_BACKEND_MODE=cli`).
+**Prerequisites:**
+- [Rust](https://rustup.rs/) installed
+- [Claude Code](https://claude.ai/code) installed and authenticated (`claude login`)
+
+**Start the backend:**
 
 ```bash
 cd backend-rust
-cargo run
+CLAUDE_BACKEND_MODE=cli cargo run
 ```
 
-See `docs/ai-providers.md` and `backend-rust/CLAUDE.md` for environment variables and routing.
+**Start the frontend:**
+
+```bash
+cd frontend
+python -m http.server 8000
+```
+
+Open http://localhost:8000 and configure:
+- AI provider: Claude
+- Transport: "Backend"
+- Backend URL: `http://localhost:3000`
 
 ---
 
-## User manual (POC)
+## Architecture Overview
 
-### Load bugs
-The app supports three ways:
-1. **Manual IDs**: paste `12345 23456` or `12345,23456` then “Load”.
-2. **Bugzilla REST URL**: paste `/rest/bug?...` or full URL, then “Load”.
-3. **Bugzilla buglist URL (`buglist.cgi`)**: paste full `buglist.cgi?...` URL. The app maps it to REST search; if it can’t, it will prompt you to copy the REST link from Bugzilla.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │                    Frontend                          │    │
+│  │  index.html + ES modules (no build step)            │    │
+│  │                                                      │    │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐            │    │
+│  │  │ app.js   │ │ ui.js    │ │ tags.js  │            │    │
+│  │  │ (wiring) │ │ (render) │ │ (logic)  │            │    │
+│  │  └──────────┘ └──────────┘ └──────────┘            │    │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐            │    │
+│  │  │bugzilla.js│ │ ai.js   │ │filters.js│            │    │
+│  │  │ (API)    │ │(providers)│ │(queries) │            │    │
+│  │  └──────────┘ └──────────┘ └──────────┘            │    │
+│  └─────────────────────────────────────────────────────┘    │
+│              │                      │                        │
+│              │ Direct API calls     │ Backend proxy          │
+│              ▼ (browser mode)       ▼ (backend mode)         │
+└──────────────┼──────────────────────┼───────────────────────┘
+               │                      │
+               │                      ▼
+               │              ┌──────────────────┐
+               │              │  Backend (Rust)  │
+               │              │  localhost:3000  │
+               │              │                  │
+               │              │  Claude CLI Mode │
+               │              │  spawns: claude  │
+               │              └────────┬─────────┘
+               │                       │
+               ▼                       ▼
+        ┌─────────────┐        ┌─────────────┐
+        │ Bugzilla    │        │ AI Provider │
+        │ REST API    │        │ (Claude/    │
+        │             │        │  Gemini)    │
+        └─────────────┘        └─────────────┘
+```
 
-### Process bugs
-- “Process” per bug: runs tagging + AI (if configured) for that bug.
-- “Process all”: runs on all loaded bugs.
-
-### Read summaries
-- Each bug has a “Summary” control.
-- Click to expand a row below with the AI-generated brief summary.
-
-### Filter
-- Tag filter: show bugs matching all selected tags.
-- Difference filter: show bugs that have all tags in **Include** and none in **Exclude**.
-
-### Set `Has STR` on Bugzilla
-- If the tool suggests `Has STR`, click “Set Has STR” next to the bug.
-- If direct write fails (CORS), switch Bugzilla writes to backend proxy mode.
-
-### Canned responses
-- Maintain a response library:
-  - Edit in the UI, or
-  - Import from Markdown (`.md`) following `docs/canned-responses-spec.md`.
-- Per bug:
-  - Select a canned response → optionally “Customize with AI”.
-  - Or “AI suggest” a response from your list.
-- Copy draft reply or post it as a Bugzilla comment (if enabled).
-
----
-
-## Outputs / export
-- Download results as **JSON**, **CSV**, and **Markdown**.
-- Exports include:
-  - computed tags
-  - `hasStrSuggested`
-  - AI brief summary
-  - AI provider metadata (non-secret)
-
-See `docs/export-formats.md`.
-
----
-
-## Project docs
-
-- `docs/architecture.md` — full architecture, modules, data flow
-- `docs/ai-providers.md` — Gemini/Claude/OpenAI support + Claude Code CLI mode
-- `docs/tags-and-heuristics.md` — tag logic and evidence sources
-- `docs/export-formats.md` — JSON/CSV/MD output schemas
-- `docs/canned-responses-spec.md` — Markdown spec for canned responses (v1)
-- `docs/canned-responses-conversion-guide.md` — prompt-able guide to convert your existing responses
+**Key design principles:**
+- Pure vanilla JS frontend (no frameworks, no build step)
+- Browser loads ES modules directly
+- Backend is optional (only needed for CLI mode or CORS bypass)
+- All AI prompts centralized in `frontend/src/prompts.js`
 
 ---
 
-## Non-goals (for this POC)
-- Large-scale bug lists (hundreds/thousands) with heavy pagination/virtualization.
-- Perfect 1:1 reproduction of every advanced `buglist.cgi` query (we support best-effort mapping + REST-link fallback).
-- Fully automated Bugzilla actions without user review (AI never posts automatically).
+## User Guide
 
+### Loading Bugs
+
+Enter bug IDs or URLs in the input field:
+
+| Input Type | Example |
+|------------|---------|
+| Bug IDs | `123456 234567` or `123456,234567` |
+| REST URL | `https://bugzilla.mozilla.org/rest/bug?...` |
+| Buglist URL | `https://bugzilla.mozilla.org/buglist.cgi?...` |
+
+Click **Load** to fetch bug data.
+
+### Processing Bugs
+
+- **Process**: Analyze a single bug (tags + AI if configured)
+- **Process All**: Analyze all loaded bugs
+
+After processing, each bug displays:
+- Computed tags (Has STR, test-attached, crashstack, etc.)
+- AI-detected signals (AI-detected STR, AI-detected test-attached)
+- AI summary (click "Summary" to expand)
+- Suggested severity/priority
+- Test page link (if AI generated one)
+
+### Filtering Bugs
+
+Use the filter controls to find actionable bugs:
+
+| Preset | Description |
+|--------|-------------|
+| AI STR but no Has STR | Bugs where AI found STR but Bugzilla field not set |
+| Needs triage | Bugs missing Has STR or test |
+| Fuzzing testcase | Bugs from fuzzing tools |
+
+### Composing Responses
+
+1. Click **Compose** on a bug row
+2. Select a canned response from the dropdown
+3. Optionally select AI options (Shorter, Friendlier, +STR request)
+4. Click **AI Customize** to personalize for this bug
+5. Copy to clipboard or post directly to Bugzilla
+
+### Managing Canned Responses
+
+Canned responses are stored in `frontend/canned-responses.md` and can be managed in the UI:
+
+**To add a response:**
+1. Go to the Canned Responses tab
+2. Click "New Response"
+3. Fill in ID, title, categories, and body template
+4. Click Save
+
+**To edit/delete:**
+- Click "Edit" or "Delete" on any response card
+
+**To import from Markdown:**
+1. Create a `.md` file following the format in `docs/canned-responses-spec.md`
+2. Use the Import button to load it
+
+**Markdown format:**
+```markdown
+## response-id
+Title: Response Title
+Categories: need-info, str
+Description: When to use this response
+
+Hi, thanks for filing this bug!
+
+[Response body here...]
+```
+
+### Exporting Results
+
+Click export buttons to download analysis:
+
+| Format | Contents |
+|--------|----------|
+| **JSON** | Full bug data, tags, AI analysis, summaries |
+| **CSV** | Flat table for spreadsheets |
+| **Markdown** | Formatted table for documentation |
+
+Exports include computed tags, AI summaries, and triage suggestions. API keys are never exported.
+
+### Test Page Generation
+
+When AI is enabled and a bug contains code snippets but no test file:
+- AI automatically generates a minimal HTML test page
+- Click **Open Test** to preview in a new tab
+- Click **⬇** to download as `bug{ID}.html`
+
+---
+
+## Configuration
+
+### AI Providers
+
+| Provider | Browser Mode | Backend Mode | Notes |
+|----------|--------------|--------------|-------|
+| Gemini | Yes | Yes | Recommended for browser mode |
+| Claude | Yes | Yes (CLI) | Backend CLI mode recommended |
+| OpenAI | No | Yes | Backend only |
+
+### Backend Environment Variables
+
+Create `backend-rust/.env`:
+
+```bash
+# Claude CLI mode (recommended)
+CLAUDE_BACKEND_MODE=cli
+
+# Or API mode with keys
+CLAUDE_BACKEND_MODE=api
+ANTHROPIC_API_KEY=sk-...
+GEMINI_API_KEY=...
+
+# Optional: Bugzilla API key for write operations
+BUGZILLA_API_KEY=...
+```
+
+### Installing Claude Code CLI
+
+For backend CLI mode:
+
+1. Install Claude Code: https://claude.ai/code
+2. Authenticate: `claude login`
+3. Verify: `claude --version`
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+cd frontend
+npm install   # First time only
+npm test      # Run Vitest tests
+```
+
+### Project Structure
+
+```
+triage-wizard/
+├── frontend/
+│   ├── index.html          # Entry point
+│   ├── styles.css          # All styling
+│   ├── canned-responses.md # Default responses
+│   └── src/
+│       ├── app.js          # Orchestration
+│       ├── ui.js           # DOM rendering
+│       ├── bugzilla.js     # Bugzilla API
+│       ├── ai.js           # AI providers
+│       ├── prompts.js      # AI prompts/schemas
+│       ├── tags.js         # Tag computation
+│       ├── filters.js      # Filter logic
+│       └── ...
+├── backend-rust/
+│   ├── src/main.rs         # Server + endpoints
+│   └── src/claude_cli.rs   # Claude CLI integration
+└── docs/
+    └── canned-responses-spec.md
+```
+
+See `CLAUDE.md` files in each directory for development guidance.
+
+---
+
+## Security Notes
+
+**Frontend-only mode:**
+- API keys stored in browser localStorage
+- Keys visible to browser extensions
+- Use keys with restricted quotas
+
+**Backend mode:**
+- Keys stay server-side
+- Claude CLI uses local auth
+- Recommended for team use
+
+---
+
+## Roadmap / Future Ideas
+
+### Needinfo Queue Import
+Import bugs from a user's needinfo queue directly, making it easier to process bugs awaiting your response.
+
+### AI Chat Interface
+Add a chatbox for direct conversation with AI about the current bug or triage decisions. Useful for asking follow-up questions or getting clarification on AI suggestions.
+
+### Oracle Map
+Build a knowledge base from historical bug data to provide context-aware suggestions. When triaging a new bug, the system could surface similar past bugs, their resolutions, and patterns. Requires a database backend to store and index historical bug information.
+
+### Cluster Detective
+Large-scale bug analysis to identify patterns, duplicates, and related issues across the bug database. Would perform batch analysis and store results for quick lookup. Requires database infrastructure for storing analysis results and enabling efficient queries across large bug sets.
+
+---
+
+## License
+
+MIT

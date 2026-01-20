@@ -14,6 +14,8 @@ A client-first web app to triage Mozilla Bugzilla bugs:
 ## Non-negotiables
 
 - Frontend must remain **pure HTML/CSS/JS** (no frameworks).
+- **No build step required** - browser loads ES modules directly.
+- **npm is for testing only** - `node_modules/` is not needed to run the app.
 - Keep module boundaries clean:
   - network in `bugzilla.js` / `ai.js`
   - pure logic in `tags.js` / `filters.js`
@@ -24,41 +26,81 @@ A client-first web app to triage Mozilla Bugzilla bugs:
 
 ## Dev commands
 
-Frontend:
+Frontend (run):
 ```bash
 cd frontend
 python -m http.server 8000
 ```
 
+Frontend (test):
+```bash
+cd frontend
+npm install   # First time only
+npm test      # Run Vitest tests
+```
+
 Backend (optional):
 ```bash
 cd backend-rust
-cargo run
+CLAUDE_BACKEND_MODE=cli cargo run
 ```
 
-## Where to make changes
+## Key files
 
-- Bugzilla fetch/parsing: `frontend/src/bugzilla.js`
-- AI provider routing/prompts: `frontend/src/ai.js`
-- Tag rules: `frontend/src/tags.js`
-- Filters: `frontend/src/filters.js`
-- UI table + summary expander: `frontend/src/ui.js`
-- Canned responses parser/import: `frontend/src/cannedResponses.js`
-- Export formats: `frontend/src/exports.js`
+### Frontend Core
+- `frontend/src/app.js` - Orchestration, event handlers, bug processing
+- `frontend/src/ui.js` - DOM rendering, table, modals, toasts
+- `frontend/src/bugzilla.js` - Bugzilla REST API integration
+- `frontend/src/ai.js` - AI provider abstraction (Gemini, Claude)
+- `frontend/src/prompts.js` - **All AI prompts and schemas centralized here**
+- `frontend/src/tags.js` - Tag computation logic
+- `frontend/src/filters.js` - Bug filtering logic
+
+### Frontend Support
+- `frontend/src/config.js` - Settings management
+- `frontend/src/storage.js` - localStorage wrapper
+- `frontend/src/cannedResponses.js` - Canned response library
+- `frontend/src/exports.js` - JSON/CSV/Markdown export
+- `frontend/src/aiLogger.js` - AI interaction logging
+
+### Backend
+- `backend-rust/src/main.rs` - Axum server, routes, handlers
+- `backend-rust/src/claude_cli.rs` - Claude Code CLI integration
+
+## AI prompts architecture
+
+**All AI prompts are centralized in `frontend/src/prompts.js`**:
+- Schemas for structured output (classify, suggest, generate, refine, testpage)
+- Prompt builders for each AI task
+- Shared between browser mode and backend mode
+
+When backend is used, frontend sends the pre-built prompt and schema to backend.
+Backend just passes them to Claude CLI - no prompt logic in backend.
 
 ## Claude Code CLI mode (backend)
 
-Backend may be configured to call **Claude Code CLI** instead of Anthropic HTTP API:
-- `CLAUDE_BACKEND_MODE=cli`
+Backend can use **Claude Code CLI** instead of HTTP API:
+- Set `CLAUDE_BACKEND_MODE=cli`
+- Backend spawns: `claude -p --output-format json --json-schema '<schema>' --model <model>`
+- Backend extracts `structured_output` and returns to frontend
+- Requires Claude Code installed and authenticated (`claude login`)
 
-In this mode the backend spawns:
-- `claude -p --output-format json --json-schema '<schema>' --model <model>`
+## Current features
 
-The backend extracts `structured_output` and returns it to the frontend.
+- Bug loading: IDs, REST URLs, buglist.cgi URLs
+- Heuristic tagging: Has STR, test-attached, crashstack, fuzzy-test-attached
+- AI tagging: AI-detected STR, AI-detected test-attached
+- AI summaries with expandable rows
+- AI triage suggestions (severity, priority, actions)
+- Canned response library with AI customization
+- Multi-select refinement options (Shorter, Friendlier, +STR)
+- Auto test page generation from code snippets
+- Export to JSON/CSV/Markdown
+- AI interaction logging
 
 ## What to avoid
 
 - Do not auto-post AI outputs to Bugzilla; always require explicit user action.
 - Do not store secrets in exports.
-- Avoid large dependencies for parsing; keep it lightweight.
-
+- Do not add backend prompt logic - keep prompts in `frontend/src/prompts.js`.
+- Avoid large dependencies; keep it lightweight.

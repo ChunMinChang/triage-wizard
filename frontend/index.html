@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bugzilla Bug Triage Helper</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Bugzilla Bug Triage Helper</h1>
+    <p>A tool to help Mozilla developers triage Bugzilla bugs efficiently.</p>
+    <!-- Backend navigation - shown only when connected to backend -->
+    <nav id="backend-nav" class="backend-nav" hidden>
+      <span class="backend-indicator">Connected to backend</span>
+      <a href="/status" class="backend-link">Status</a>
+      <a href="/health" class="backend-link">Health API</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Settings Section -->
+    <section id="settings" class="collapsible">
+      <h2>Settings</h2>
+      <div class="settings-content">
+        <!-- Bugzilla settings -->
+        <fieldset>
+          <legend>Bugzilla</legend>
+          <label>
+            Host URL:
+            <input type="url" id="bugzilla-host" value="https://bugzilla.mozilla.org" />
+          </label>
+          <label>
+            API Key (optional):
+            <input type="password" id="bugzilla-api-key" />
+          </label>
+        </fieldset>
+
+        <!-- AI settings -->
+        <fieldset>
+          <legend>AI Provider</legend>
+          <label>
+            Provider:
+            <select id="ai-provider">
+              <option value="none">None (heuristics only)</option>
+              <option value="gemini">Gemini</option>
+              <option value="claude">Claude</option>
+            </select>
+          </label>
+          <label>
+            Transport:
+            <select id="ai-transport">
+              <option value="browser">Browser (direct API calls)</option>
+              <option value="backend">Backend (via proxy server)</option>
+            </select>
+          </label>
+          <label>
+            Model:
+            <input type="text" id="ai-model" list="ai-model-suggestions" placeholder="Leave empty for default" />
+            <datalist id="ai-model-suggestions">
+              <!-- Gemini 2.5 models (recommended) -->
+              <option value="gemini-2.5-flash">
+              <option value="gemini-2.5-flash-lite">
+              <option value="gemini-2.5-pro">
+              <!-- Gemini 3 preview models -->
+              <option value="gemini-3-flash-preview">
+              <option value="gemini-3-pro-preview">
+              <!-- Gemini 2.0 models -->
+              <option value="gemini-2.0-flash">
+              <option value="gemini-2.0-flash-lite">
+              <!-- Gemini 1.5 legacy -->
+              <option value="gemini-1.5-flash">
+              <option value="gemini-1.5-pro">
+              <!-- Claude 4 models (recommended) -->
+              <option value="claude-sonnet-4-5-20250929">
+              <option value="claude-sonnet-4">
+              <option value="claude-opus-4-5-20251101">
+              <option value="claude-opus-4-5">
+              <option value="claude-opus-4-1-20250805">
+              <option value="claude-opus-4">
+              <!-- Claude 3.5 legacy -->
+              <option value="claude-3-5-sonnet-20241022">
+              <option value="claude-3-5-haiku-20241022">
+            </datalist>
+          </label>
+          <label id="ai-api-key-label">
+            API Key:
+            <input type="password" id="ai-api-key" />
+          </label>
+          <label id="backend-url-label">
+            Backend URL:
+            <input type="text" id="backend-url" value="" placeholder="e.g. http://localhost:3000 (empty = same-origin)" />
+          </label>
+        </fieldset>
+      </div>
+    </section>
+
+    <!-- Bug Input Section -->
+    <section id="bug-input">
+      <h2>Load Bugs</h2>
+      <div class="input-group">
+        <label for="bug-input-field">
+          Enter bug IDs, REST URL, or buglist.cgi URL:
+        </label>
+        <textarea id="bug-input-field" rows="3" placeholder="123456 234567 or https://bugzilla.mozilla.org/rest/bug?..."></textarea>
+        <button id="load-bugs-btn" type="button">Load Bugs</button>
+      </div>
+    </section>
+
+    <!-- Filter Controls -->
+    <section id="filters">
+      <h2>Filters</h2>
+      <div class="filter-controls">
+        <div class="filter-group">
+          <label>Include tags:</label>
+          <div id="include-tags" class="tag-checkboxes">
+            <!-- Tag checkboxes will be populated by JS -->
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Exclude tags:</label>
+          <div id="exclude-tags" class="tag-checkboxes">
+            <!-- Tag checkboxes will be populated by JS -->
+          </div>
+        </div>
+        <div class="filter-actions">
+          <select id="filter-preset">
+            <option value="">-- Preset filters --</option>
+            <option value="fuzzing-testcase">Fuzzing testcase</option>
+          </select>
+          <button id="apply-filter-btn" type="button">Apply Filter</button>
+          <button id="clear-filter-btn" type="button">Clear</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bug Table -->
+    <section id="bug-list">
+      <h2>Bugs <span id="bug-count"></span></h2>
+      <div class="table-actions">
+        <button id="process-all-btn" type="button">Process All</button>
+      </div>
+      <div id="bug-table-container">
+        <table id="bug-table">
+          <thead>
+            <tr>
+              <th scope="col">ID</th>
+              <th scope="col">Status</th>
+              <th scope="col">Product</th>
+              <th scope="col">Component</th>
+              <th scope="col">Summary</th>
+              <th scope="col">Tags</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bug-table-body">
+            <!-- Bug rows will be populated by JS -->
+          </tbody>
+        </table>
+        <p id="empty-state" class="empty-state">
+          No bugs loaded. Enter bug IDs or a Bugzilla URL above and click "Load Bugs".
+        </p>
+      </div>
+    </section>
+
+    <!-- Canned Responses Section -->
+    <section id="canned-responses">
+      <h2>Canned Responses</h2>
+      <div class="canned-responses-controls">
+        <div class="canned-import">
+          <label class="import-label">
+            Import Markdown:
+            <input type="file" id="import-canned-md" accept=".md" />
+          </label>
+          <label class="import-options">
+            <input type="checkbox" id="import-replace" />
+            Replace existing (uncheck to merge)
+          </label>
+        </div>
+        <div class="canned-actions">
+          <button id="new-response-btn" type="button" class="btn-primary">+ New Response</button>
+          <button id="export-canned-md-btn" type="button">Export Markdown</button>
+        </div>
+        <div class="canned-filter">
+          <label for="canned-category-filter">Filter by category:</label>
+          <select id="canned-category-filter">
+            <option value="">All categories</option>
+          </select>
+        </div>
+      </div>
+      <div id="canned-responses-list" class="canned-responses-list">
+        <!-- Canned responses will be populated by JS -->
+        <p class="empty-state">No canned responses loaded. Import a Markdown file or wait for defaults to load.</p>
+      </div>
+    </section>
+
+    <!-- AI Logs Section -->
+    <section id="ai-logs" class="collapsible">
+      <h2>AI Logs <span id="ai-logs-count"></span></h2>
+      <div class="ai-logs-controls">
+        <div class="ai-logs-stats" id="ai-logs-stats">
+          <!-- Stats will be populated by JS -->
+        </div>
+        <div class="ai-logs-actions">
+          <button id="refresh-logs-btn" type="button">Refresh</button>
+          <button id="download-logs-btn" type="button">Download Logs</button>
+          <button id="clear-logs-btn" type="button" class="btn-danger">Clear Logs</button>
+        </div>
+      </div>
+      <div id="ai-logs-list" class="ai-logs-list">
+        <!-- Log entries will be populated by JS -->
+        <p class="empty-state">No AI interactions logged yet. AI logs will appear here as you use AI features.</p>
+      </div>
+    </section>
+
+    <!-- Export Section -->
+    <section id="exports">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button id="export-json-btn" type="button">Export JSON</button>
+        <button id="export-csv-btn" type="button">Export CSV</button>
+        <button id="export-md-btn" type="button">Export Markdown</button>
+        <label class="import-label">
+          Import JSON:
+          <input type="file" id="import-json" accept=".json" />
+        </label>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/anthropics/triage-wizard" target="_blank">GitHub</a> |
+      Built for Mozilla bug triage
+    </p>
+  </footer>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="loading-overlay" hidden>
+    <div class="spinner"></div>
+    <p id="loading-message">Loading...</p>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Response Composer Modal -->
+  <div id="response-composer-modal" class="modal" hidden>
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>Compose Response</h2>
+        <span id="composer-bug-id" class="composer-bug-id"></span>
+        <button id="close-composer-btn" class="close-btn" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <div class="composer-controls">
+          <label for="canned-response-select">Select a canned response:</label>
+          <div class="composer-select-row">
+            <select id="canned-response-select">
+              <option value="">-- Choose a response --</option>
+            </select>
+          </div>
+          <div class="composer-ai-options">
+            <label class="ai-options-label">AI options <span class="hint">(select before customizing)</span>:</label>
+            <div class="refine-chips">
+              <button type="button" class="chip" data-instruction="Make it shorter">Shorter</button>
+              <button type="button" class="chip" data-instruction="Use a friendlier tone">Friendlier</button>
+              <button type="button" class="chip" data-instruction="Add request for STR">+STR request</button>
+            </div>
+            <div class="ai-customize-row">
+              <input type="text" id="refine-instruction" placeholder="Additional instructions (optional)" />
+              <button id="ai-customize-btn" type="button" class="btn-ai" disabled>AI Customize</button>
+            </div>
+          </div>
+        </div>
+        <div class="composer-editor">
+          <label for="response-body">Response body:</label>
+          <textarea id="response-body" rows="12" placeholder="Select a canned response above or write your own..."></textarea>
+        </div>
+        <details class="ai-reasoning-panel" id="ai-reasoning-panel">
+          <summary>AI Reasoning</summary>
+          <div id="ai-reasoning-content" class="ai-reasoning-content">
+            <p class="empty-state">No AI reasoning available yet. Click "AI Generate" to get started.</p>
+          </div>
+        </details>
+      </div>
+      <footer class="modal-footer">
+        <span id="history-indicator" class="history-indicator" hidden></span>
+        <button id="undo-response-btn" type="button" class="btn-secondary" disabled title="No history available">Undo</button>
+        <button id="copy-response-btn" type="button">Copy to Clipboard</button>
+        <button id="post-response-btn" type="button" class="btn-primary">Post to Bugzilla</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Canned Response Editor Modal -->
+  <div id="canned-editor-modal" class="modal" hidden>
+    <div class="modal-content canned-editor-content">
+      <header class="modal-header">
+        <h2 id="canned-editor-title">New Canned Response</h2>
+        <button id="close-canned-editor-btn" class="close-btn" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <form id="canned-editor-form" class="canned-editor-form">
+          <div class="form-group">
+            <label for="canned-editor-id">ID (unique, lowercase, no spaces)</label>
+            <input type="text" id="canned-editor-id" required pattern="[a-z0-9-]+" placeholder="e.g., need-str" />
+            <span class="form-hint">Used to identify this response. Auto-generated from title if left empty.</span>
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-title-input">Title</label>
+            <input type="text" id="canned-editor-title-input" required placeholder="e.g., Request Steps to Reproduce" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-categories">Categories (comma-separated)</label>
+            <input type="text" id="canned-editor-categories" placeholder="e.g., triage, needs-info" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-description">Description (internal note for triagers)</label>
+            <input type="text" id="canned-editor-description" placeholder="e.g., Use when bug lacks reproduction steps" />
+          </div>
+          <div class="form-group">
+            <label for="canned-editor-body">Response Body (Markdown)</label>
+            <textarea id="canned-editor-body" rows="10" required placeholder="Write your canned response here..."></textarea>
+          </div>
+        </form>
+      </div>
+      <footer class="modal-footer">
+        <button id="cancel-canned-editor-btn" type="button">Cancel</button>
+        <button id="save-canned-editor-btn" type="button" class="btn-primary">Save Response</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Load app as ES module -->
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

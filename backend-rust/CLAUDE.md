@@ -1,9 +1,10 @@
 # Claude Code Instructions (Backend)
 
-The backend is optional and exists to:
-- proxy AI calls when browser CORS blocks
-- proxy Bugzilla writes when browser CORS blocks
-- enable Claude Code CLI mode for AI calls
+The backend is **optional** and exists to:
+- Proxy AI calls when browser CORS blocks direct requests
+- Enable **Claude Code CLI** mode for AI calls (recommended)
+- Proxy Bugzilla writes when browser CORS blocks
+- Keep API keys server-side (more secure than browser localStorage)
 
 ## Run
 
@@ -12,36 +13,88 @@ cd backend-rust
 cargo run
 ```
 
+Or with CLI mode explicitly:
+```bash
+CLAUDE_BACKEND_MODE=cli cargo run
+```
+
 ## Environment variables
 
-AI provider keys (when using HTTP API mode):
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`
-- `OPENAI_API_KEY`
-- `GROK_API_KEY` (optional)
+Create `.env` file or set environment variables:
 
-Claude routing:
-- `CLAUDE_BACKEND_MODE=api|cli`
-  - `api`: call Anthropic HTTP API
-  - `cli`: spawn Claude Code CLI `claude`
+```bash
+# Claude routing (required)
+CLAUDE_BACKEND_MODE=cli   # Use Claude Code CLI (recommended)
+# CLAUDE_BACKEND_MODE=api # Use Anthropic HTTP API
 
-Bugzilla:
-- Optionally `BUGZILLA_API_KEY` if you decide server-side key usage.
+# API keys (only needed for api mode)
+ANTHROPIC_API_KEY=sk-...
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
 
-## Endpoints (suggested)
+# Optional: Bugzilla API key for write operations
+BUGZILLA_API_KEY=...
+```
 
-- `POST /api/ai/classify`
-- `POST /api/ai/customize-response`
-- `POST /api/ai/suggest-response`
-- `POST /api/bugzilla/set-has-str`
-- `POST /api/bugzilla/post-comment`
+## Endpoints
 
-## CLI mode notes
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/ai/classify` | Bug classification + summary |
+| `POST /api/ai/suggest-response` | Suggest canned response |
+| `POST /api/ai/generate` | Generate triage response |
+| `POST /api/ai/refine` | Refine response with instructions |
+| `POST /api/ai/testpage` | Generate test page from bug |
+| `POST /api/bugzilla/set-has-str` | Set cf_has_str field |
+| `POST /api/bugzilla/post-comment` | Post comment to bug |
+| `GET /health` | Health check |
 
-In `CLAUDE_BACKEND_MODE=cli`:
-- backend spawns `claude -p --output-format json --json-schema '<schema>' --model <model>`
-- reads stdout JSON, extracts `structured_output`
-- returns normalized JSON to frontend
+## Architecture
 
-Ensure `claude` is installed and authenticated on the machine running the backend.
+### Prompt handling
+**Important**: All AI prompts are defined in `frontend/src/prompts.js`.
 
+The frontend sends pre-built prompts and schemas to the backend:
+```json
+{
+  "provider": "claude",
+  "model": "claude-sonnet-4-20250514",
+  "bug": { ... },
+  "prompt": "You are a Mozilla bug triager...",
+  "schema": "{\"type\":\"object\",...}"
+}
+```
+
+The backend does NOT contain prompt logic - it just passes the prompt to Claude CLI or API.
+
+### CLI mode flow
+1. Frontend calls `/api/ai/classify` with prompt and schema
+2. Backend spawns: `claude -p --output-format json --json-schema '<schema>' --model <model>`
+3. Backend writes prompt to stdin
+4. Backend reads stdout, extracts `structured_output` from JSON
+5. Backend returns structured output to frontend
+
+### Key files
+- `src/main.rs` - Axum server, routes, request/response types
+- `src/claude_cli.rs` - Claude Code CLI integration
+
+## Claude Code CLI requirements
+
+For CLI mode to work:
+1. Claude Code must be installed: https://claude.ai/code
+2. Claude Code must be authenticated: `claude login`
+3. Verify with: `claude --version`
+
+The CLI uses your existing Claude Code authentication - no API key needed.
+
+## Static file serving
+
+The backend can serve the frontend:
+- Static files from `../frontend/` are served at root
+- Cache-Control headers prevent browser caching during development
+
+## CORS
+
+CORS is configured to allow:
+- `http://localhost:8000` (frontend dev server)
+- `http://localhost:3000` (backend itself)
