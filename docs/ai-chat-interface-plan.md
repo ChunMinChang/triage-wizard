@@ -42,6 +42,25 @@ Transform the triage-wizard from a one-shot AI analysis tool into an interactive
 | **Codebase Access** | Three tiers: Local repo (full), Searchfox (online), None (limited) |
 | **Claude Integration** | Research spike first: evaluate CLI `--resume` vs HTTP API |
 | **Storage** | localStorage + file export (download/upload analysis files) |
+| **Local Codebase Tools** | AI uses MCP tools (Read, Glob, Grep, Bash) explicitly listed in prompt |
+| **Searchfox Tools** | AI uses searchfox-cli and treeherder-cli for online code search |
+| **Tool Installation** | Automatic with permission - show prompt, then run install command |
+
+### Codebase Tools by Tier
+
+**Tier 1 (Local)**: When user provides Firefox repo path, AI has full access to:
+- **Read**: Read file contents by path
+- **Glob**: Find files matching patterns (e.g., `dom/media/**/*.cpp`)
+- **Grep**: Search for code patterns across files
+- **Bash**: Run `mach`, `hg log`, `git log` for build/history info
+
+**Tier 2 (Searchfox)**: When user opts for online search, AI uses CLI tools:
+- **searchfox-cli** (https://github.com/padenot/searchfox-cli): Search mozilla-central
+- **treeherder-cli** (https://github.com/padenot/treeherder-cli): Code history, CI, test failures
+
+If tools aren't installed, permission prompt allows automatic installation.
+
+**Tier 3 (None)**: Limited to bug data analysis only.
 
 ---
 
@@ -428,6 +447,8 @@ Define message protocol:
 { type: 'chunk', content: string }  // Streaming AI response
 { type: 'message-complete', messageId: string }
 { type: 'permission-request', id: string, permissionType: string, path?: string, description: string }
+// permissionType: 'file-read' | 'file-write' | 'tool-use' | 'web-search' | 'tool-install'
+// tool-install adds: toolName, toolUrl, installCommand fields
 { type: 'phase-change', phase: string }
 { type: 'analysis-update', data: object }  // Structured analysis results
 { type: 'error', message: string }
@@ -653,16 +674,18 @@ Three-tier codebase access system:
 **UI Components**:
 - Modal at chat session start with 3 radio options
 - Path input + browse button for local repo
+- Explain available tools per tier (MCP tools for local, CLI tools for searchfox)
 - Persist user preference in localStorage
 
 **Tier Implementation**:
-1. **Local**: Path validation (check for `mach` or `.gecko-dir`), send path to backend
-2. **Searchfox**: Set flag `useSearchfox: true`, AI uses WebFetch for https://searchfox.org/
+1. **Local**: Path validation (check for `mach` or `.gecko-dir`), send path to backend. AI uses MCP tools (Read, Glob, Grep, Bash).
+2. **Searchfox**: Check if searchfox-cli/treeherder-cli installed. If not, show `tool-install` permission prompt. AI uses these CLI tools via Bash.
 3. **None**: Set flag `skipCodebase: true`, display "limited mode" badge in chat
 
 **Backend**:
 - Validation endpoint for local path: `POST /api/validate-codebase`
-- No backend changes needed for searchfox (frontend handles via existing WebFetch)
+- Tool availability check: detect if searchfox-cli and treeherder-cli are installed
+- Tool installation: run install command when user approves (cargo install or npm)
 
 **Files**: Update `frontend/src/config.js`, new `frontend/src/codebaseModal.js`
 
@@ -678,8 +701,8 @@ Implement the 5-phase workflow from the skill:
 2. **Classification**: Detect STR, testcase, crashstack, fuzzing
 3. **Assessment**: Severity/priority assignment
 4. **Investigation**: Codebase search (behavior varies by tier):
-   - **Local**: Full file access via backend proxy
-   - **Searchfox**: WebFetch to searchfox.org API (slower, show "searching online...")
+   - **Local**: AI uses MCP tools (Read, Glob, Grep, Bash) to investigate code paths
+   - **Searchfox**: AI uses searchfox-cli/treeherder-cli to search mozilla-central and check code history
    - **None**: Skip or show "code investigation unavailable" with limited heuristics
 5. **Response**: Draft using canned templates
 
