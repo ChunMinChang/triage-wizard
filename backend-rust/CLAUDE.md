@@ -23,18 +23,14 @@ CLAUDE_BACKEND_MODE=cli cargo run
 Create `.env` file or set environment variables:
 
 ```bash
-# Claude routing (required)
-CLAUDE_BACKEND_MODE=cli   # Use Claude Code CLI (recommended)
-# CLAUDE_BACKEND_MODE=api # Use Anthropic HTTP API
-
-# API keys (only needed for api mode)
-ANTHROPIC_API_KEY=sk-...
-GEMINI_API_KEY=...
-OPENAI_API_KEY=...
+# Claude CLI mode (only supported mode currently)
+CLAUDE_BACKEND_MODE=cli
 
 # Optional: Bugzilla API key for write operations
 BUGZILLA_API_KEY=...
 ```
+
+> **Note:** HTTP API mode (`CLAUDE_BACKEND_MODE=api`) is not yet implemented. The infrastructure exists but API calls return "not yet implemented" errors. Use CLI mode or browser-direct mode instead.
 
 ## Endpoints
 

@@ -61,6 +61,38 @@ Open http://localhost:8000 and configure:
 - Transport: "Backend"
 - Backend URL: `http://localhost:3000`
 
+### Option 3: Claude Code Skill (Interactive Analysis)
+
+If you have [Claude Code](https://claude.ai/code) installed and work in the Firefox repository, you can install a `/triage` skill for interactive bug analysis sessions directly in your terminal.
+
+**Setup:**
+
+1. Copy the skill files from [here](https://github.com/ChunMinChang/dotfiles/tree/master/mozilla/firefox/dot.claude/skills/triage) to your Firefox repo:
+   ```
+   mozilla-unified/.claude/skills/triage/
+   ├── SKILL.md           # Skill definition
+   └── CANNED_RESPONSES.md # Response templates
+   ```
+2. In your Firefox repo, run Claude Code and use `/triage <bug_number>`.
+
+**Usage:**
+
+From your Firefox repository directory:
+```bash
+claude
+> /triage bug1234567
+```
+
+This starts an interactive analysis session where Claude:
+- Fetches bug data from Bugzilla
+- Performs multi-phase analysis (information gathering, classification, assessment)
+- Investigates relevant source code in the Firefox codebase
+- Drafts responses using canned templates
+- Optionally generates test pages
+- Can save analysis to markdown files
+
+This approach is ideal when you want Claude to have direct access to the Firefox source code for deeper investigation.
+
 ---
 
 ## Architecture Overview
@@ -211,9 +243,10 @@ When AI is enabled and a bug contains code snippets but no test file:
 
 | Provider | Browser Mode | Backend Mode | Notes |
 |----------|--------------|--------------|-------|
-| Gemini | Yes | Yes | Recommended for browser mode |
+| Gemini | Yes | No | Browser mode only |
 | Claude | Yes | Yes (CLI) | Backend CLI mode recommended |
-| OpenAI | No | Yes | Backend only |
+
+> **Note:** The backend currently only supports Claude via the Claude Code CLI. Gemini is supported in browser mode only. OpenAI support is not yet implemented.
 
 ### Backend Environment Variables
 
@@ -222,11 +255,6 @@ Create `backend-rust/.env`:
 ```bash
 # Claude CLI mode (recommended)
 CLAUDE_BACKEND_MODE=cli
-
-# Or API mode with keys
-CLAUDE_BACKEND_MODE=api
-ANTHROPIC_API_KEY=sk-...
-GEMINI_API_KEY=...
 
 # Optional: Bugzilla API key for write operations
 BUGZILLA_API_KEY=...
@@ -296,17 +324,27 @@ See `CLAUDE.md` files in each directory for development guidance.
 
 ## Roadmap / Future Ideas
 
+### Backend Support for Codex CLI and Gemini CLI
+Add support for other CLI tools in the backend, similar to the existing Claude Code CLI integration. This would allow using OpenAI's Codex CLI and Google's Gemini CLI for AI operations without requiring API keys in the browser.
+
+### Backend HTTP API Mode
+Implement direct HTTP API calls in the backend for Claude, Gemini, and OpenAI. Currently the backend only supports Claude via CLI mode. Adding HTTP API support would allow using API keys server-side without requiring Claude Code CLI installation. Infrastructure (env vars, routing) exists but API calls are stub implementations.
+
 ### Needinfo Queue Import
 Import bugs from a user's needinfo queue directly, making it easier to process bugs awaiting your response.
 
 ### AI Chat Interface
-Add a chatbox for direct conversation with AI about the current bug or triage decisions. Useful for asking follow-up questions or getting clarification on AI suggestions.
+Add a chatbox for direct conversation with AI about the current bug. Beyond simple Q&A, this enables interactive triage sessions where:
+- AI can be granted access to a local Firefox repository (with user permission) for deep code investigation
+- Users and AI collaborate iteratively—discussing findings, narrowing down root causes, and deciding next steps together
+- AI reads relevant source code directly, understands context better, and knows what specific information to request from bug reporters
+- Combines the power of code-aware analysis (like the [Claude Code triage skill](https://github.com/ChunMinChang/dotfiles/tree/master/mozilla/firefox/dot.claude/skills/triage)) with a friendlier UI that can integrate with other services to streamline the entire workflow
 
 ### Oracle Map
-Build a knowledge base from historical bug data to provide context-aware suggestions. When triaging a new bug, the system could surface similar past bugs, their resolutions, and patterns. Requires a database backend to store and index historical bug information.
+A knowledge base built from historical bug data that provides context-aware guidance during triage. When analyzing a new bug, the system surfaces similar past bugs along with their resolutions and patterns. More than just finding similar bugs, Oracle Map offers insights into potential root causes, points to modules that may be responsible, and suggests next steps based on where you are in the triage process. Requires a database backend to store and index historical bug information.
 
 ### Cluster Detective
-Large-scale bug analysis to identify patterns, duplicates, and related issues across the bug database. Would perform batch analysis and store results for quick lookup. Requires database infrastructure for storing analysis results and enabling efficient queries across large bug sets.
+Large-scale analysis that groups bugs by similarity, relationships, and cause-and-effect chains. By clustering related bugs together, you gain a broader view of issues—understanding their scope, identifying duplicates, and assessing downstream impacts. This helps prioritize work and avoid fixing symptoms while missing the underlying problem. Performs batch analysis and stores results for quick lookup. Requires database infrastructure for efficient queries across large bug sets.
 
 ---
 
