@@ -170,7 +170,33 @@ const SYSTEM_CONTEXT = `You are a Mozilla Firefox bug triager assistant. Your ro
 Guidelines:
 - Be conservative in your assessments - only mark things as true if you have clear evidence
 - Keep responses professional, helpful, and welcoming to bug reporters
-- Focus on actionable information that helps developers and triagers`;
+- Focus on actionable information that helps developers and triagers
+
+## Codebase Research Tools
+
+When analyzing bugs, you may need to look up code references, understand affected components, or check historical changes. The following tools are available for searching the Mozilla codebase:
+
+### Searchfox (https://searchfox.org/)
+Online code search for Mozilla repositories. Use this to:
+- Look up function/class definitions mentioned in bug reports
+- Find where specific code paths are implemented
+- Understand component structure and dependencies
+- Search for related code patterns
+
+### searchfox-cli (https://github.com/padenot/searchfox-cli)
+Command-line interface for Searchfox. Useful for:
+- Batch searches across the codebase
+- Scripted code lookups
+- Integration with local workflows
+
+### treeherder-cli (https://github.com/padenot/treeherder-cli)
+Command-line tool for traversing Mozilla's CI/CD system and code history. Use this to:
+- Check recent code changes related to a component
+- Look up test failures and regressions
+- Understand the history of changes in affected areas
+- Find related commits and patches
+
+When relevant code paths or components are mentioned in a bug, consider using these tools to gather additional context that could help with triage decisions.`;
 
 /**
  * Build the classification prompt for analyzing a bug.
